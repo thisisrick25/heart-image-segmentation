@@ -1,5 +1,6 @@
 import os
 from glob import glob
+from typing import Tuple, List, Dict, Any
 
 from monai.transforms import(
     Compose,
@@ -16,26 +17,39 @@ from monai.transforms import(
 from monai.data import DataLoader, Dataset, CacheDataset
 from monai.utils import set_determinism, first
 import matplotlib.pyplot as plt
+import config
 
-def prepare(data_path, pixdim=(1.5, 1.5, 1.0), a_min=0, a_max=2000, spatial_size=[128,128, 64], cache=False):
-    #[128, 128, 38], [512, 512, 38], (1.5, 1.5, 1.0)
+def prepare(data_path: str, 
+            pixdim: Tuple[float, float, float] = config.PIXDIM, 
+            a_min: float = config.A_MIN, 
+            a_max: float = config.A_MAX, 
+            spatial_size: List[int] = config.SPATIAL_SIZE, 
+            cache: bool = False) -> Tuple[DataLoader, DataLoader]:
+    '''
+    Prepares the data loaders for training and testing.
+    
+    Args:
+        data_path: Path to the dataset directory containing 'train' and 'test' folders.
+        pixdim: Pixel dimensions for spacing.
+        a_min: Minimum intensity for scaling.
+        a_max: Maximum intensity for scaling.
+        spatial_size: Spatial size for resizing (unused currently).
+        cache: Whether to use CacheDataset.
+        
+    Returns:
+        A tuple of (train_loader, test_loader).
+    '''
+    set_determinism(seed=config.SEED)
 
-    set_determinism(seed=0)
+    train_images = sorted(glob(os.path.join(data_path, 'train', 'images', '*.nii.gz')))
+    train_labels = sorted(glob(os.path.join(data_path, 'train', 'labels', '*.nii.gz')))
 
-    train_images = sorted(glob(os.path.join(data_path, 'train/images', '*.nii.gz')))
-    train_labels = sorted(glob(os.path.join(data_path, 'train/labels', '*.nii.gz')))
-
-    test_images = sorted(glob(os.path.join(data_path, 'test/images', '*.nii.gz')))
-    test_labels = sorted(glob(os.path.join(data_path, 'test/labels', '*.nii.gz')))
+    test_images = sorted(glob(os.path.join(data_path, 'test', 'images', '*.nii.gz')))
+    test_labels = sorted(glob(os.path.join(data_path, 'test', 'labels', '*.nii.gz')))
 
     # create dictionary
     train_files = [{'image': image_name, 'label': label_name} for image_name, label_name in zip(train_images, train_labels)]
     test_files = [{'image': image_name, 'label': label_name} for image_name, label_name in zip(test_images, test_labels)]
-
-    # print('train images: ', len(train_images))
-    # print('train labels: ', len(train_labels))
-    # print(train_files)
-    # print(test_files)
 
     train_transforms = Compose(
         [
@@ -65,25 +79,33 @@ def prepare(data_path, pixdim=(1.5, 1.5, 1.0), a_min=0, a_max=2000, spatial_size
 
     if cache:
         train_ds = CacheDataset(data=train_files, transform=train_transforms,cache_rate=1.0)
-        train_loader = DataLoader(train_ds, batch_size=1)
+        train_loader = DataLoader(train_ds, batch_size=config.BATCH_SIZE)
 
         test_ds = CacheDataset(data=test_files, transform=test_transforms, cache_rate=1.0)
-        test_loader = DataLoader(test_ds, batch_size=1)
+        test_loader = DataLoader(test_ds, batch_size=config.BATCH_SIZE)
 
         return train_loader, test_loader
 
     else:
         train_ds = Dataset(data=train_files, transform=train_transforms)
-        train_loader = DataLoader(train_ds, batch_size=1)
+        train_loader = DataLoader(train_ds, batch_size=config.BATCH_SIZE)
 
         test_ds = Dataset(data=test_files, transform=test_transforms)
-        test_loader = DataLoader(test_ds, batch_size=1)
+        test_loader = DataLoader(test_ds, batch_size=config.BATCH_SIZE)
 
         return train_loader, test_loader
 
 
-def show_patient(data, SLICE_NUMBER=1, train=True, test=False):
+def show_patient(data: Tuple[DataLoader, DataLoader], slice_number: int = 1, train: bool = True, test: bool = False) -> None:
+    '''
+    Visualizes a patient's image and label.
     
+    Args:
+        data: Tuple of (train_loader, test_loader).
+        slice_number: The slice index to visualize.
+        train: Whether to visualize from the training set.
+        test: Whether to visualize from the test set.
+    '''
     check_patient_train, check_patient_test = data
 
     view_train_patient = first(check_patient_train)
@@ -92,26 +114,26 @@ def show_patient(data, SLICE_NUMBER=1, train=True, test=False):
     if train:
         plt.figure("Visualization Train", (10, 4))
         plt.subplot(1, 2, 1)
-        plt.title(f"image {SLICE_NUMBER}")
-        plt.imshow(view_train_patient["image"][0, 0, :, :, SLICE_NUMBER], cmap="gray")
+        plt.title(f"image {slice_number}")
+        plt.imshow(view_train_patient["image"][0, 0, :, :, slice_number], cmap="gray")
 
         plt.subplot(1, 2, 2)
-        plt.title(f"label {SLICE_NUMBER}")
-        plt.imshow(view_train_patient["label"][0, 0, :, :, SLICE_NUMBER])
+        plt.title(f"label {slice_number}")
+        plt.imshow(view_train_patient["label"][0, 0, :, :, slice_number])
         plt.show()
     
     if test:
         plt.figure("Visualization Test", (10, 4))
         plt.subplot(1, 2, 1)
-        plt.title(f"image {SLICE_NUMBER}")
-        plt.imshow(view_test_patient["image"][0, 0, :, :, SLICE_NUMBER], cmap="gray")
+        plt.title(f"image {slice_number}")
+        plt.imshow(view_test_patient["image"][0, 0, :, :, slice_number], cmap="gray")
 
         plt.subplot(1, 2, 2)
-        plt.title(f"label {SLICE_NUMBER}")
-        plt.imshow(view_test_patient["label"][0, 0, :, :, SLICE_NUMBER])
+        plt.title(f"label {slice_number}")
+        plt.imshow(view_test_patient["label"][0, 0, :, :, slice_number])
         plt.show()
 
 if __name__ == "__main__":
-    data_path ='C:/Users/swapn/code/AI Healthcare Imaging/datasets/Task02_Heart/data_train_test'
+    data_path = config.DATA_TRAIN_TEST_PATH
     patient = prepare(data_path)
     show_patient(patient)

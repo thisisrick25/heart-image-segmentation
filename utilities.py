@@ -5,17 +5,44 @@ import os
 import numpy as np
 from monai.losses import DiceLoss
 from tqdm import tqdm
+from typing import Tuple, List, Any
 
-def dice_metric(predicted, target):
+def dice_metric(predicted: torch.Tensor, target: torch.Tensor) -> float:
     '''
-    In this function we take `predicted` and `target` (label) to calculate the dice coeficient then we use it 
-    to calculate a metric value for the training and the validation.
+    Calculates the Dice coefficient metric.
+    
+    Args:
+        predicted: The predicted output from the model.
+        target: The ground truth label.
+        
+    Returns:
+        The Dice metric value (1 - DiceLoss).
     '''
     dice_value = DiceLoss(to_onehot_y=True, sigmoid=True, squared_pred=True)
     value = 1 - dice_value(predicted, target).item()
     return value
 
-def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , device=torch.device("cuda:0")):
+def train(model: torch.nn.Module, 
+          data_in: Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader], 
+          loss: torch.nn.Module, 
+          optim: torch.optim.Optimizer, 
+          max_epochs: int, 
+          model_dir: str, 
+          test_interval: int = 1, 
+          device: torch.device = torch.device("cuda:0")) -> None:
+    '''
+    Trains the model and evaluates it on the test set.
+    
+    Args:
+        model: The neural network model.
+        data_in: A tuple containing (train_loader, test_loader).
+        loss: The loss function.
+        optim: The optimizer.
+        max_epochs: Maximum number of epochs to train.
+        model_dir: Directory to save model checkpoints and metrics.
+        test_interval: Interval (in epochs) to evaluate on the test set.
+        device: The device to run training on (CPU or GPU).
+    '''
     best_metric = -1
     best_metric_epoch = -1
     save_loss_train = []
@@ -23,6 +50,9 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
     save_metric_train = []
     save_metric_test = []
     train_loader, test_loader = data_in
+
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
 
     for epoch in range(max_epochs):
         print("-" * 10)
@@ -90,7 +120,7 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
                     
                     test_outputs = model(test_image)
                     
-                    test_loss = loss(outputs, test_label)
+                    test_loss = loss(test_outputs, test_label)
                     test_epoch_loss += test_loss.item()
                     test_metric = dice_metric(test_outputs, test_label)
                     epoch_metric_test += test_metric
@@ -123,7 +153,7 @@ def train(model, data_in, loss, optim, max_epochs, model_dir, test_interval=1 , 
         f"train completed, best_metric: {best_metric:.4f} "
         f"at epoch: {best_metric_epoch}")
 
-def calculate_pixels(data):
+def calculate_pixels(data: List[dict]) -> np.ndarray:
     val = np.zeros((1, 2))
 
     for batch in tqdm(data):
@@ -137,7 +167,7 @@ def calculate_pixels(data):
     print('The last values:', val)
     return val
 
-def calculate_weights(val1, val2):
+def calculate_weights(val1: int, val2: int) -> torch.Tensor:
     '''
     In this function we take the number of the background and the forgroud pixels to return the `weights` 
     for the cross entropy loss values.
