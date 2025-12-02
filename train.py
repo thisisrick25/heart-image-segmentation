@@ -7,8 +7,10 @@ from utilities import train
 from preprocess import prepare
 import config
 
+
 def main():
-    data_path = config.DATA_TRAIN_TEST_PATH
+    # Updated to point to the main dataset dir, though prepare() uses config internally now.
+    data_path = config.DATASET_DIR
     model_path = config.MODEL_RESULT_PATH
 
     data_in = prepare(data_path)
@@ -20,17 +22,20 @@ def main():
         dimensions=3,
         in_channels=1,
         out_channels=2,
-        channels=(16, 32, 64, 128, 256), 
+        channels=(16, 32, 64, 128, 256),
         strides=(2, 2, 2, 2),
         num_res_units=2,
         norm=Norm.BATCH,
     ).to(device)
 
-    #loss_function = DiceCELoss(to_onehot_y=True, sigmoid=True, squared_pred=True, ce_weight=calculate_weights(1792651250,2510860).to(device))
+    # loss_function = DiceCELoss(to_onehot_y=True, sigmoid=True, squared_pred=True, ce_weight=calculate_weights(1792651250,2510860).to(device))
     loss_function = DiceLoss(to_onehot_y=True, sigmoid=True, squared_pred=True)
-    optimizer = torch.optim.Adam(model.parameters(), config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY, amsgrad=True)
+    optimizer = torch.optim.Adam(model.parameters(
+    ), config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY, amsgrad=True)
 
-    train(model, data_in, loss_function, optimizer, config.MAX_EPOCHS, model_path, config.TEST_INTERVAL, device)
+    train(model, data_in, loss_function, optimizer,
+          config.MAX_EPOCHS, model_path, config.TEST_INTERVAL, device)
+
 
 if __name__ == '__main__':
     main()

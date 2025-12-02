@@ -11,6 +11,13 @@ This project implements an automatic heart segmentation algorithm using deep lea
 - **Evaluation**: Calculates Dice metric for model performance assessment.
 - **Configuration**: Centralized configuration for easy parameter tuning.
 
+## Dataset
+
+This project uses the **Task02_Heart** dataset from the [Medical Segmentation Decathlon](https://medicaldecathlon.com/).
+
+- **Download**: [Direct link](https://msd-for-monai.s3-us-west-2.amazonaws.com/Task02_Heart.tar)
+- **Automated Download**: Run `python download_data.py` to download and extract the dataset automatically.
+
 ## Project Structure
 
 ```text
