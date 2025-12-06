@@ -1,23 +1,190 @@
-from monai.networks.nets import UNet
-from monai.networks.layers import Norm
-from monai.losses import DiceLoss
+"""
+Training Script for Heart Segmentation
+Works both locally and on Kaggle (auto-detects environment)
+"""
 
+import os
 import torch
-from utilities import train
-from preprocess import prepare
+from pathlib import Path
 import config
 
+# Detect if running on Kaggle
+KAGGLE_ENV = os.environ.get('KAGGLE_KERNEL_RUN_TYPE') is not None
 
-def main():
-    # Updated to point to the main dataset dir, though prepare() uses config internally now.
-    data_path = config.DATASET_DIR
-    model_path = config.MODEL_RESULT_PATH
+if KAGGLE_ENV:
+    print("🌐 Running on Kaggle environment")
+    KAGGLE_INPUT = Path("/kaggle/input")
+    KAGGLE_WORKING = Path("/kaggle/working")
+    # Use the Kaggle dataset - dataset is inside Task02_Heart subdirectory
+    DATASET_DIR = KAGGLE_INPUT / "medical-segmentation-decathlon-heart" / "Task02_Heart"
+    # On Kaggle: save to working dir, then copy to repo results/ for GitHub
+    MODEL_RESULT_PATH = KAGGLE_WORKING / "results"
+else:
+    print("💻 Running locally")
+    # Download dataset from Kaggle using Kaggle API
+    from kaggle.api.kaggle_api_extended import KaggleApi
 
-    data_in = prepare(data_path)
+    DATASET_DIR = Path(config.DATASET_DIR)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # Download dataset directly to datasets directory if not already there
+    if not DATASET_DIR.exists() or not (DATASET_DIR / "imagesTr").exists():
+        print(f"Downloading dataset to: {DATASET_DIR}")
+
+        # Workaround for Kaggle API bug - set empty env var to prevent KeyError
+        if "KAGGLE_API_TOKEN" not in os.environ:
+            os.environ["KAGGLE_API_TOKEN"] = ""
+
+        # Initialize Kaggle API
+        api = KaggleApi()
+        api.authenticate()
+
+        # Download dataset
+        import shutil
+
+        DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
+        api.dataset_download_files(
+            config.KAGGLE_DATASET,
+            path=DATASET_DIR,
+            unzip=True,
+            quiet=False
+        )
+
+        # Move Task02_Heart contents up to DATASET_DIR if needed
+        task_dir = DATASET_DIR / "Task02_Heart"
+        if task_dir.exists():
+            for item in task_dir.iterdir():
+                shutil.move(str(item), str(DATASET_DIR / item.name))
+            task_dir.rmdir()
+
+        print("✓ Dataset downloaded to datasets/ directory")
+    else:
+        print("✓ Using existing dataset in project directory")
+
+    # Locally: results/ dir exists but is tracked in git
+    MODEL_RESULT_PATH = Path(config.MODEL_RESULT_PATH)
+SEED = config.SEED
+BATCH_SIZE = config.BATCH_SIZE
+MAX_EPOCHS = config.MAX_EPOCHS_LOCAL if not KAGGLE_ENV else config.MAX_EPOCHS
+LEARNING_RATE = config.LEARNING_RATE
+WEIGHT_DECAY = config.WEIGHT_DECAY
+TEST_INTERVAL = config.TEST_INTERVAL
+TRAIN_RATIO = config.TRAIN_RATIO
+SPATIAL_SIZE = config.SPATIAL_SIZE
+PIXDIM = config.PIXDIM
+A_MIN = config.A_MIN
+A_MAX = config.A_MAX
+
+print(f"Training for {MAX_EPOCHS} epoch(s)")
+
+
+def check_dataset():
+    """Verify dataset is available"""
+    if DATASET_DIR.exists() and (DATASET_DIR / "imagesTr").exists():
+        print(f"✓ Dataset found at {DATASET_DIR}")
+        return
+    else:
+        print("⚠️ Dataset not found!")
+        if KAGGLE_ENV:
+            print("Please attach the dataset: https://www.kaggle.com/datasets/vivekprajapati2048/medical-segmentation-decathlon-heart")
+            print(f"Expected path: {DATASET_DIR}")
+            raise FileNotFoundError(
+                "Dataset not attached to Kaggle kernel. Please add it in the kernel settings.")
+        else:
+            print(f"Expected path: {DATASET_DIR}")
+            raise FileNotFoundError(
+                "Dataset not found. Make sure kagglehub downloaded it correctly.")
+
+
+def prepare_data():
+    """Prepare data loaders for training"""
+    import glob
+    from monai.transforms import (
+        Compose, LoadImaged, AddChanneld, ScaleIntensityRanged,
+        CropForegroundd, Orientationd, Spacingd, ToTensord
+    )
+    from monai.data import Dataset, DataLoader, CacheDataset
+    from monai.utils import set_determinism
+
+    set_determinism(seed=SEED)
+
+    images_path = DATASET_DIR / "imagesTr"
+    labels_path = DATASET_DIR / "labelsTr"
+
+    # Get all image and label files
+    all_images = sorted(glob.glob(str(images_path / "*.nii.gz")))
+    all_labels = sorted(glob.glob(str(labels_path / "*.nii.gz")))
+
+    print(f"Found {len(all_images)} images and {len(all_labels)} labels")
+
+    # Create data dicts
+    data_dicts = [
+        {"image": image, "label": label}
+        for image, label in zip(all_images, all_labels)
+    ]
+
+    # Shuffle and split
+    import random
+    random.seed(SEED)
+    random.shuffle(data_dicts)
+
+    split_idx = int(len(data_dicts) * TRAIN_RATIO)
+    train_files = data_dicts[:split_idx]
+    test_files = data_dicts[split_idx:]
+
+    print(
+        f"Training samples: {len(train_files)}, Validation samples: {len(test_files)}")
+
+    # Define transforms
+    train_transforms = Compose([
+        LoadImaged(keys=["image", "label"]),
+        AddChanneld(keys=["image", "label"]),
+        Spacingd(keys=["image", "label"], pixdim=PIXDIM,
+                 mode=("bilinear", "nearest")),
+        Orientationd(keys=["image", "label"], axcodes="RAS"),
+        ScaleIntensityRanged(
+            keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        ToTensord(keys=["image", "label"]),
+    ])
+
+    test_transforms = Compose([
+        LoadImaged(keys=["image", "label"]),
+        AddChanneld(keys=["image", "label"]),
+        Spacingd(keys=["image", "label"], pixdim=PIXDIM,
+                 mode=("bilinear", "nearest")),
+        Orientationd(keys=["image", "label"], axcodes="RAS"),
+        ScaleIntensityRanged(
+            keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        ToTensord(keys=["image", "label"]),
+    ])
+
+    # Create datasets - use regular Dataset to save memory
+    train_ds = Dataset(data=train_files, transform=train_transforms)
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+
+    test_ds = Dataset(data=test_files, transform=test_transforms)
+    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE)
+
+    return train_loader, test_loader
+
+
+def train_model(train_loader, test_loader):
+    """Train the segmentation model"""
+    from monai.networks.nets import UNet
+    from monai.networks.layers import Norm
+    from monai.losses import DiceLoss
+    from tqdm import tqdm
+    import numpy as np
+
+    # Setup device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(
+            f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
 
+    # Create model
     model = UNet(
         dimensions=3,
         in_channels=1,
@@ -28,13 +195,182 @@ def main():
         norm=Norm.BATCH,
     ).to(device)
 
-    # loss_function = DiceCELoss(to_onehot_y=True, sigmoid=True, squared_pred=True, ce_weight=calculate_weights(1792651250,2510860).to(device))
+    # Loss and optimizer
     loss_function = DiceLoss(to_onehot_y=True, sigmoid=True, squared_pred=True)
-    optimizer = torch.optim.Adam(model.parameters(
-    ), config.LEARNING_RATE, weight_decay=config.WEIGHT_DECAY, amsgrad=True)
+    optimizer = torch.optim.Adam(
+        model.parameters(), LEARNING_RATE, weight_decay=WEIGHT_DECAY, amsgrad=True)
 
-    train(model, data_in, loss_function, optimizer,
-          config.MAX_EPOCHS, model_path, config.TEST_INTERVAL, device)
+    # Helper function for dice metric
+    def dice_metric(predicted, target):
+        dice_value = DiceLoss(
+            to_onehot_y=True, sigmoid=True, squared_pred=True)
+        return 1 - dice_value(predicted, target).item()
+
+    # Training loop
+    best_metric = -1
+    best_metric_epoch = -1
+    save_loss_train = []
+    save_loss_test = []
+    save_metric_train = []
+    save_metric_test = []
+
+    MODEL_RESULT_PATH.mkdir(parents=True, exist_ok=True)
+
+    for epoch in range(MAX_EPOCHS):
+        print(f"\n{'='*50}")
+        print(f"Epoch {epoch + 1}/{MAX_EPOCHS}")
+        print(f"{'='*50}")
+
+        model.train()
+        train_epoch_loss = 0
+        epoch_metric_train = 0
+        train_step = 0
+
+        for batch_data in tqdm(train_loader, desc="Training"):
+            train_step += 1
+            image = batch_data["image"].to(device)
+            label = batch_data["label"].to(device)
+            label = label != 0  # Convert to binary
+
+            optimizer.zero_grad()
+            outputs = model(image)
+            train_loss = loss_function(outputs, label)
+            train_loss.backward()
+            optimizer.step()
+
+            train_epoch_loss += train_loss.item()
+            train_metric = dice_metric(outputs, label)
+            epoch_metric_train += train_metric
+
+        train_epoch_loss /= train_step
+        epoch_metric_train /= train_step
+        save_loss_train.append(train_epoch_loss)
+        save_metric_train.append(epoch_metric_train)
+
+        print(f"Training Loss: {train_epoch_loss:.4f}")
+        print(f"Training Dice: {epoch_metric_train:.4f}")
+
+        # Save training metrics
+        np.save(MODEL_RESULT_PATH / 'loss_train.npy', save_loss_train)
+        np.save(MODEL_RESULT_PATH / 'metric_train.npy', save_metric_train)
+
+        # Validation
+        if (epoch + 1) % TEST_INTERVAL == 0:
+            model.eval()
+            with torch.no_grad():
+                test_epoch_loss = 0
+                epoch_metric_test = 0
+                test_step = 0
+
+                for test_data in tqdm(test_loader, desc="Validation"):
+                    test_step += 1
+                    test_image = test_data["image"].to(device)
+                    test_label = test_data["label"].to(device)
+                    test_label = test_label != 0
+
+                    test_outputs = model(test_image)
+                    test_loss = loss_function(test_outputs, test_label)
+                    test_epoch_loss += test_loss.item()
+
+                    test_metric = dice_metric(test_outputs, test_label)
+                    epoch_metric_test += test_metric
+
+                test_epoch_loss /= test_step
+                epoch_metric_test /= test_step
+                save_loss_test.append(test_epoch_loss)
+                save_metric_test.append(epoch_metric_test)
+
+                print(f"Validation Loss: {test_epoch_loss:.4f}")
+                print(f"Validation Dice: {epoch_metric_test:.4f}")
+
+                # Save test metrics
+                np.save(MODEL_RESULT_PATH / 'loss_test.npy', save_loss_test)
+                np.save(MODEL_RESULT_PATH / 'metric_test.npy', save_metric_test)
+
+                if epoch_metric_test > best_metric:
+                    best_metric = epoch_metric_test
+                    best_metric_epoch = epoch + 1
+                    torch.save(model.state_dict(),
+                               MODEL_RESULT_PATH / "best_metric_model.pth")
+                    print(f"✓ New best model saved! Dice: {best_metric:.4f}")
+
+                print(
+                    f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
+
+    print(f"\n{'='*50}")
+    print(f"Training completed!")
+    print(f"Best metric: {best_metric:.4f} at epoch {best_metric_epoch}")
+    print(f"Model saved to: {MODEL_RESULT_PATH / 'best_metric_model.pth'}")
+    print(f"{'='*50}")
+
+    return save_loss_train, save_loss_test, save_metric_train, save_metric_test
+
+
+def plot_metrics(loss_train, loss_test, metric_train, metric_test):
+    """Plot training metrics"""
+    try:
+        import matplotlib.pyplot as plt
+
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
+
+        ax1.plot(loss_train)
+        ax1.set_title("Training Loss")
+        ax1.set_xlabel("Epoch")
+        ax1.set_ylabel("Loss")
+        ax1.grid(True)
+
+        ax2.plot(loss_test)
+        ax2.set_title("Validation Loss")
+        ax2.set_xlabel("Epoch")
+        ax2.set_ylabel("Loss")
+        ax2.grid(True)
+
+        ax3.plot(metric_train)
+        ax3.set_title("Training Dice Metric")
+        ax3.set_xlabel("Epoch")
+        ax3.set_ylabel("Dice")
+        ax3.grid(True)
+
+        ax4.plot(metric_test)
+        ax4.set_title("Validation Dice Metric")
+        ax4.set_xlabel("Epoch")
+        ax4.set_ylabel("Dice")
+        ax4.grid(True)
+
+        plt.tight_layout()
+        plt.savefig(MODEL_RESULT_PATH / "training_metrics.png",
+                    dpi=150, bbox_inches='tight')
+        print(
+            f"\n✓ Training plots saved to: {MODEL_RESULT_PATH / 'training_metrics.png'}")
+
+        if not KAGGLE_ENV:
+            plt.show()
+    except Exception as e:
+        print(f"Could not generate plots: {e}")
+
+
+def main():
+    """Main training pipeline"""
+    print("🚀 Starting Heart Segmentation Training Pipeline")
+    print(f"Environment: {'Kaggle' if KAGGLE_ENV else 'Local'}")
+
+    # Step 1: Verify dataset is available
+    check_dataset()
+
+    # Step 2: Prepare data
+    print("\n📊 Preparing data...")
+    train_loader, test_loader = prepare_data()
+
+    # Step 3: Train model
+    print("\n🏋️ Starting training...")
+    loss_train, loss_test, metric_train, metric_test = train_model(
+        train_loader, test_loader)
+
+    # Step 4: Plot results
+    print("\n📈 Generating plots...")
+    plot_metrics(loss_train, loss_test, metric_train, metric_test)
+
+    print("\n✓ Pipeline completed successfully!")
 
 
 if __name__ == '__main__':

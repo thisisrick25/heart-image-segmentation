@@ -6,3 +6,4 @@ dicom2nifti
 pytest-shutil
 nibabel
 monai
+kaggle
