@@ -17,8 +17,6 @@ if KAGGLE_ENV:
     KAGGLE_WORKING = Path("/kaggle/working")
     # Use the Kaggle dataset - dataset is inside Task02_Heart subdirectory
     DATASET_DIR = KAGGLE_INPUT / "medical-segmentation-decathlon-heart" / "Task02_Heart"
-    # On Kaggle: save to working dir, then copy to repo results/ for GitHub
-    MODEL_RESULT_PATH = KAGGLE_WORKING / "results"
 else:
     print("💻 Running locally")
     # Download dataset from Kaggle using Kaggle API
@@ -258,7 +256,8 @@ def train_model(train_loader, test_loader):
     start_epoch = 0
 
     # Try to resume from checkpoint
-    checkpoint_path = MODEL_RESULT_PATH / "last_checkpoint.pth"
+    result_path = KAGGLE_WORKING if KAGGLE_ENV else MODEL_RESULT_PATH
+    checkpoint_path = result_path / "last_checkpoint.pth"
     if checkpoint_path.exists():
         print(f"Found checkpoint at {checkpoint_path}, resuming training...")
         checkpoint = torch.load(checkpoint_path, map_location=device)
@@ -276,13 +275,27 @@ def train_model(train_loader, test_loader):
         print(
             f"✓ Resumed from epoch {start_epoch}, best Dice: {best_metric:.4f}")
 
-    MODEL_RESULT_PATH.mkdir(parents=True, exist_ok=True)
+    result_path.mkdir(parents=True, exist_ok=True)
 
     # Initialize TensorBoard writer
-    tensorboard_log_dir = MODEL_RESULT_PATH / "tensorboard_logs"
+    tensorboard_log_dir = result_path / "tensorboard_logs"
     writer = SummaryWriter(log_dir=str(tensorboard_log_dir))
     print(f"📊 TensorBoard logs: {tensorboard_log_dir}")
     print(f"   View with: tensorboard --logdir={tensorboard_log_dir}\n")
+
+    # Load TensorBoard inline in Kaggle notebooks
+    if KAGGLE_ENV:
+        try:
+            from IPython import get_ipython
+            ipython = get_ipython()
+            if ipython is not None:
+                print("Loading TensorBoard inline in Kaggle...")
+                ipython.run_line_magic('load_ext', 'tensorboard')
+                ipython.run_line_magic(
+                    'tensorboard', f'--logdir {tensorboard_log_dir}')
+        except Exception as e:
+            print(f"Could not load inline TensorBoard: {e}")
+            print("TensorBoard logs will be saved for later review.")
 
     for epoch in range(start_epoch, MAX_EPOCHS):
         print(f"\n{'='*50}")
@@ -333,8 +346,8 @@ def train_model(train_loader, test_loader):
         writer.add_scalar('Dice/train', epoch_metric_train, epoch)
 
         # Save training metrics
-        np.save(MODEL_RESULT_PATH / 'loss_train.npy', save_loss_train)
-        np.save(MODEL_RESULT_PATH / 'metric_train.npy', save_metric_train)
+        np.save(result_path / 'loss_train.npy', save_loss_train)
+        np.save(result_path / 'metric_train.npy', save_metric_train)
 
         # Validation
         if (epoch + 1) % TEST_INTERVAL == 0:
@@ -370,8 +383,8 @@ def train_model(train_loader, test_loader):
                 writer.add_scalar('Dice/validation', epoch_metric_test, epoch)
 
                 # Save test metrics
-                np.save(MODEL_RESULT_PATH / 'loss_test.npy', save_loss_test)
-                np.save(MODEL_RESULT_PATH / 'metric_test.npy', save_metric_test)
+                np.save(result_path / 'loss_test.npy', save_loss_test)
+                np.save(result_path / 'metric_test.npy', save_metric_test)
 
                 # Update learning rate based on validation performance
                 scheduler.step(epoch_metric_test)
@@ -380,7 +393,7 @@ def train_model(train_loader, test_loader):
                     best_metric = epoch_metric_test
                     best_metric_epoch = epoch + 1
                     torch.save(model.state_dict(),
-                               MODEL_RESULT_PATH / "best_metric_model.pth")
+                               result_path / "best_metric_model.pth")
                     print(f"✓ New best model saved! Dice: {best_metric:.4f}")
 
                 print(
@@ -400,16 +413,24 @@ def train_model(train_loader, test_loader):
         }
         if use_amp:
             checkpoint['scaler_state_dict'] = scaler.state_dict()
-        torch.save(checkpoint, MODEL_RESULT_PATH / "last_checkpoint.pth")
+        torch.save(checkpoint, result_path / "last_checkpoint.pth")
 
     # Close TensorBoard writer
     writer.close()
 
+    # On Kaggle, artifacts are saved to /kaggle/working/
+    # GitHub Actions will automatically pull and commit them to results/
+    if KAGGLE_ENV:
+        print(f"✓ Training artifacts saved to: {KAGGLE_WORKING}")
+        print(f"✓ TensorBoard logs saved to: {tensorboard_log_dir}")
+        print("\n💡 Artifacts will be automatically committed to GitHub via GitHub Actions")
+        print("   Check the Actions tab in your GitHub repo after kernel completes.")
+
     print(f"\n{'='*50}")
     print("Training completed!")
     print(f"Best metric: {best_metric:.4f} at epoch {best_metric_epoch}")
-    print(f"Best model: {MODEL_RESULT_PATH / 'best_metric_model.pth'}")
-    print(f"Last checkpoint: {MODEL_RESULT_PATH / 'last_checkpoint.pth'}")
+    print(f"Best model: {result_path / 'best_metric_model.pth'}")
+    print(f"Last checkpoint: {result_path / 'last_checkpoint.pth'}")
     print(f"TensorBoard logs: {tensorboard_log_dir}")
     print(f"{'='*50}")
 
@@ -420,6 +441,8 @@ def plot_metrics(loss_train, loss_test, metric_train, metric_test):
     """Plot training metrics"""
     try:
         import matplotlib.pyplot as plt
+
+        result_path = KAGGLE_WORKING if KAGGLE_ENV else MODEL_RESULT_PATH
 
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(12, 10))
 
@@ -448,10 +471,10 @@ def plot_metrics(loss_train, loss_test, metric_train, metric_test):
         ax4.grid(True)
 
         plt.tight_layout()
-        plt.savefig(MODEL_RESULT_PATH / "training_metrics.png",
+        plt.savefig(result_path / "training_metrics.png",
                     dpi=150, bbox_inches='tight')
         print(
-            f"\n✓ Training plots saved to: {MODEL_RESULT_PATH / 'training_metrics.png'}")
+            f"\n✓ Training plots saved to: {result_path / 'training_metrics.png'}")
 
         if not KAGGLE_ENV:
             plt.show()

@@ -37,22 +37,11 @@ jobs:
 
       - name: Download Kaggle kernel output
         run: |
-          # Download directly to results (will create results/results/ due to Kaggle structure)
+          # Download kernel output directly to results/ directory
           kaggle kernels output thisisrick25/heart-segmentation-training -p ./results
 
-          # Extract nested results directory and remove the extra layer
-          if [ -d "./results/results" ]; then
-            echo "✓ Found nested results directory in Kaggle output"
-            mv ./results/results/* ./results/
-            rm -rf ./results/results
-            echo "✓ Artifacts extracted to results/"
-            ls -lah ./results/
-          else
-            echo "⚠️ No nested results directory found in Kaggle output"
-            echo "Available files:"
-            ls -lah ./results/
-            exit 1
-          fi
+          echo "✓ Artifacts downloaded to results/"
+          ls -lah ./results/
 
       - name: Extract metrics for commit message
         id: metrics

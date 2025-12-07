@@ -109,9 +109,25 @@ This project uses the **Task02_Heart** dataset from the [Medical Segmentation De
    - Trains for 20 epochs (configurable in `config.py`)
    - GPU acceleration with AMP enabled
 
-3. **Download Results**
-   - After training completes, download the output
-   - Commit `results/` to GitHub for tracking
+3. **Auto-sync Results to GitHub** (Automated via GitHub Actions)
+
+   After training completes:
+
+   a. Go to GitHub → Actions tab → "Sync Kaggle Training Artifacts"
+
+   b. Click "Run workflow" and enter your Kaggle kernel slug
+
+   c. The workflow will:
+
+   - Download artifacts from Kaggle
+   - Commit to `results/` with metrics in commit message
+   - Create a summary with Dice scores
+
+   **One-time setup:**
+
+   - Add Kaggle API credentials to GitHub Secrets:
+     - `KAGGLE_USERNAME`: Your Kaggle username
+     - `KAGGLE_KEY`: Your Kaggle API key (from kaggle.json)
 
 ## 🎯 Workflow
 
