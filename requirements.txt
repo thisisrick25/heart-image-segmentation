@@ -7,3 +7,5 @@ pytest-shutil
 nibabel
 monai
 kaggle
+ipywidgets
+tensorboard
