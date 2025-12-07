@@ -1,98 +1,214 @@
-# Heart Image Segmentation
+# 🫀 Heart Image Segmentation with 3D UNet
 
-This project implements an automatic heart segmentation algorithm using deep learning (UNet) with the MONAI framework. It processes medical imaging data (DICOM/NIfTI), trains a segmentation model, and evaluates its performance.
+A production-ready deep learning pipeline for automatic heart segmentation from 3D medical images using MONAI and PyTorch. This project is designed for seamless local development, GitHub version control, and Kaggle GPU training.
 
-## Features
+## ✨ Key Features
 
-- **Data Preparation**: Converts DICOM series to NIfTI format, groups slices, and cleans up empty labels.
-- **Preprocessing**: Loads, normalizes, and transforms 3D medical images for training.
-- **Model**: Uses a 3D UNet architecture implemented via MONAI.
-- **Training**: Custom training loop with Dice Loss and Adam optimizer.
-- **Evaluation**: Calculates Dice metric for model performance assessment.
-- **Configuration**: Centralized configuration for easy parameter tuning.
+### 🚀 **Unified Workflow**
 
-## Dataset
+- **Local Development**: Code and test on your machine with 1-epoch quick runs
+- **GitHub Integration**: Version control with automatic artifact tracking
+- **Kaggle Training**: Seamlessly push and train with free GPU/TPU resources
 
-This project uses the **Task02_Heart** dataset from the [Medical Segmentation Decathlon](https://medicaldecathlon.com/).
+### 🧠 **Advanced Training Features**
 
-- **Download**: [Direct link](https://msd-for-monai.s3-us-west-2.amazonaws.com/Task02_Heart.tar)
-- **Automated Download**: Run `python download_data.py` to download and extract the dataset automatically.
+- **3D UNet Architecture**: State-of-the-art medical image segmentation
+- **Automatic Mixed Precision (AMP)**: 2-3x faster training on GPU
+- **Data Augmentation**: Random flips, rotations, and intensity shifts
+- **Learning Rate Scheduling**: Adaptive LR with plateau detection
+- **Checkpoint Resuming**: Recover from interruptions automatically
+- **CacheDataset**: 5-10x faster data loading with intelligent caching
 
-## Project Structure
+### 📊 **Monitoring & Visualization**
 
-```text
-.
-├── config.py           # Configuration parameters (paths, hyperparameters)
-├── prepare.py          # Data preparation (DICOM to NIfTI, grouping)
-├── preprocess.py       # Data loading and augmentation pipeline
-├── train.py            # Main training script
-├── utilities.py        # Helper functions for training and metrics
-├── requirements.txt    # Project dependencies
-└── datasets/           # Dataset directory (configured in config.py)
+- **TensorBoard Integration**: Real-time training metrics visualization
+- **Interactive Notebook**: Explore data, visualize results, and test inference
+- **Comprehensive Metrics**: Dice score, loss curves, and model performance tracking
+
+## 📦 Dataset
+
+This project uses the **Task02_Heart** dataset from the [Medical Segmentation Decathlon](https://medicaldecathlon.com/):
+
+- **Source**: [Kaggle - Medical Segmentation Decathlon Heart](https://www.kaggle.com/datasets/thisisrick25/medical-segmentation-decathlon-heart)
+- **Contents**: 20 cardiac MRI scans with expert segmentation labels
+- **Format**: NIfTI (.nii.gz)
+- **Auto-download**: The script automatically downloads the dataset on first run (local environment only)
+
+## 📁 Project Structure
+
+```
+├── train.py              # Main training script (local + Kaggle compatible)
+├── config.py             # Centralized configuration (paths, hyperparameters)
+├── test.ipynb            # Interactive notebook for exploration & visualization
+├── utilities.py          # Training utilities and metrics
+├── requirements.txt      # Python dependencies
+├── kernel-metadata.json  # Kaggle kernel configuration
+├── results/              # Model checkpoints, metrics, TensorBoard logs
+└── datasets/             # Downloaded dataset (local only, gitignored)
 ```
 
-## Installation
+## 🚀 Quick Start
 
-1. Clone the repository.
-2. Install dependencies:
+### Local Development
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/thisisrick25/heart-image-segmentation.git
+   cd heart-image-segmentation
+   ```
+
+2. **Install dependencies**
 
    ```bash
    pip install -r requirements.txt
    ```
 
-## Usage
+3. **Configure Kaggle API** (for dataset download)
 
-### 1. Configuration
+   - Create `~/.kaggle/kaggle.json` with your Kaggle API credentials
+   - Or create `~/.kaggle/access_token.txt` with your access token
 
-Edit `config.py` to set your dataset paths and training parameters (batch size, learning rate, epochs).
+4. **Run training** (1 epoch locally for testing)
 
-### 2. Data Preparation
+   ```bash
+   python train.py
+   ```
 
-Run `prepare.py` to organize your DICOM files and convert them to NIfTI format:
+   The script will:
 
-```bash
-python prepare.py
+   - Auto-download the dataset to `datasets/`
+   - Train for 1 epoch (configurable in `config.py`)
+   - Save checkpoints to `results/`
+
+5. **Monitor with TensorBoard**
+
+   ```bash
+   tensorboard --logdir=results/tensorboard_logs
+   ```
+
+   Open http://localhost:6006 to view training curves in real-time.
+
+6. **Explore data interactively**
+
+   ```bash
+   jupyter notebook test.ipynb
+   ```
+
+### Kaggle Training
+
+1. **Push to Kaggle Kernel**
+
+   ```bash
+   kaggle kernels push
+   ```
+
+2. **Run on Kaggle**
+
+   - The kernel will automatically use the attached dataset
+   - Trains for 20 epochs (configurable in `config.py`)
+   - GPU acceleration with AMP enabled
+
+3. **Download Results**
+   - After training completes, download the output
+   - Commit `results/` to GitHub for tracking
+
+## 🎯 Workflow
+
+```mermaid
+graph LR
+    A[Code Locally] --> B[Test with 1 Epoch]
+    B --> C[Push to GitHub]
+    C --> D[Push to Kaggle]
+    D --> E[Train with GPU]
+    E --> F[Download Results]
+    F --> G[Commit to GitHub]
 ```
 
-### 3. Visualization (Optional)
+## ⚙️ Configuration
 
-Run `preprocess.py` to visualize the data loader and transformations:
+Edit `config.py` to customize training:
 
-```bash
-python preprocess.py
+```python
+# Training parameters
+MAX_EPOCHS = 20              # Full training epochs (Kaggle)
+MAX_EPOCHS_LOCAL = 1         # Quick test epochs (local)
+BATCH_SIZE = 1               # Batch size (limited by 3D volume size)
+LEARNING_RATE = 1e-5         # Initial learning rate
+TRAIN_RATIO = 0.8            # 80% train, 20% validation
+
+# Model parameters
+SPATIAL_SIZE = [128, 128, 64]  # Input volume size
+PIXDIM = (1.5, 1.5, 1.0)       # Voxel spacing
 ```
 
-### 4. Training
+## 📊 Features in Detail
 
-Run `train.py` to start training the model:
+### Automatic Mixed Precision (AMP)
 
-```bash
-python train.py
-```
+- Reduces memory usage by 50%
+- Speeds up training by 2-3x on modern GPUs
+- Automatic fallback to FP32 on CPU
 
-The model checkpoints and metrics will be saved in the result directory specified in `config.py`.
+### Checkpoint Resuming
 
-### 5. Monitor Training with TensorBoard
+- Saves `last_checkpoint.pth` after every epoch
+- Automatically resumes if training is interrupted
+- Preserves: model, optimizer, scheduler, metrics, scaler state
 
-View live training metrics in your browser:
+### Data Augmentation
 
-```bash
-tensorboard --logdir=results/tensorboard_logs
-```
+- Random flips (X, Y, Z axes)
+- Random 90° rotations
+- Random intensity shifts (±10%)
+- Only applied during training
 
-Then open [http://localhost:6006](http://localhost:6006) in your browser to see:
+### Learning Rate Scheduling
 
-- Training & validation loss curves
-- Dice metric progression
-- Real-time updates during training
+- Monitors validation Dice score
+- Reduces LR by 50% if no improvement for 5 epochs
+- Helps achieve better convergence
 
-## Requirements
+## 📈 Results
 
-- Python 3.x
-- PyTorch
-- MONAI
-- Nibabel
-- Dicom2Nifti
-- Matplotlib
-- Tqdm
-- Numpy
+The model is evaluated using the Dice similarity coefficient:
+
+- **Training**: Real-time monitoring via TensorBoard
+- **Validation**: Evaluated every epoch
+- **Best Model**: Automatically saved based on validation Dice score
+- **Checkpoints**: Full training state saved for resuming
+
+Example outputs are visualized in `test.ipynb`.
+
+## 🛠️ Tech Stack
+
+- **Deep Learning**: PyTorch, MONAI
+- **Medical Imaging**: NiBabel, SimpleITK
+- **Data Processing**: NumPy, SciPy
+- **Visualization**: Matplotlib, TensorBoard
+- **Notebooks**: Jupyter, ipywidgets
+- **APIs**: Kaggle API
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to:
+
+- Report bugs
+- Suggest features
+- Submit pull requests
+
+## 📄 License
+
+This project is open source and available under the MIT License.
+
+## 🙏 Acknowledgments
+
+- **Dataset**: [Medical Segmentation Decathlon](http://medicaldecathlon.com/)
+- **Framework**: [MONAI - Medical Open Network for AI](https://monai.io/)
+- **Platform**: [Kaggle](https://www.kaggle.com/) for free GPU resources
+
+## 📚 References
+
+- [Medical Segmentation Decathlon Paper](https://arxiv.org/abs/1902.09063)
+- [MONAI Documentation](https://docs.monai.io/)
+- [3D U-Net: Learning Dense Volumetric Segmentation](https://arxiv.org/abs/1606.06650)
