@@ -57,6 +57,14 @@ else:
                 shutil.move(str(item), str(DATASET_DIR / item.name))
             task_dir.rmdir()
 
+        # Clean up macOS/archive artifacts (._* files)
+        artifact_files = list(DATASET_DIR.rglob("._*"))
+        if artifact_files:
+            print(f"Cleaning up {len(artifact_files)} artifact files (._*)...")
+            for artifact in artifact_files:
+                artifact.unlink()
+            print("✓ Artifact files removed")
+
         print("✓ Dataset downloaded to datasets/ directory")
     else:
         print("✓ Using existing dataset in project directory")
@@ -100,7 +108,7 @@ def prepare_data():
     """Prepare data loaders for training"""
     import glob
     from monai.transforms import (
-        Compose, LoadImaged, AddChanneld, ScaleIntensityRanged,
+        Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged,
         CropForegroundd, Orientationd, Spacingd, ToTensord
     )
     from monai.data import Dataset, DataLoader, CacheDataset
@@ -138,7 +146,7 @@ def prepare_data():
     # Define transforms
     train_transforms = Compose([
         LoadImaged(keys=["image", "label"]),
-        AddChanneld(keys=["image", "label"]),
+        EnsureChannelFirstd(keys=["image", "label"]),
         Spacingd(keys=["image", "label"], pixdim=PIXDIM,
                  mode=("bilinear", "nearest")),
         Orientationd(keys=["image", "label"], axcodes="RAS"),
@@ -149,7 +157,7 @@ def prepare_data():
 
     test_transforms = Compose([
         LoadImaged(keys=["image", "label"]),
-        AddChanneld(keys=["image", "label"]),
+        EnsureChannelFirstd(keys=["image", "label"]),
         Spacingd(keys=["image", "label"], pixdim=PIXDIM,
                  mode=("bilinear", "nearest")),
         Orientationd(keys=["image", "label"], axcodes="RAS"),
@@ -175,6 +183,7 @@ def train_model(train_loader, test_loader):
     from monai.losses import DiceLoss
     from tqdm import tqdm
     import numpy as np
+    from torch.utils.tensorboard import SummaryWriter
 
     # Setup device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -216,6 +225,12 @@ def train_model(train_loader, test_loader):
 
     MODEL_RESULT_PATH.mkdir(parents=True, exist_ok=True)
 
+    # Initialize TensorBoard writer
+    tensorboard_log_dir = MODEL_RESULT_PATH / "tensorboard_logs"
+    writer = SummaryWriter(log_dir=str(tensorboard_log_dir))
+    print(f"📊 TensorBoard logs: {tensorboard_log_dir}")
+    print(f"   View with: tensorboard --logdir={tensorboard_log_dir}\n")
+
     for epoch in range(MAX_EPOCHS):
         print(f"\n{'='*50}")
         print(f"Epoch {epoch + 1}/{MAX_EPOCHS}")
@@ -250,6 +265,10 @@ def train_model(train_loader, test_loader):
         print(f"Training Loss: {train_epoch_loss:.4f}")
         print(f"Training Dice: {epoch_metric_train:.4f}")
 
+        # Log to TensorBoard
+        writer.add_scalar('Loss/train', train_epoch_loss, epoch)
+        writer.add_scalar('Dice/train', epoch_metric_train, epoch)
+
         # Save training metrics
         np.save(MODEL_RESULT_PATH / 'loss_train.npy', save_loss_train)
         np.save(MODEL_RESULT_PATH / 'metric_train.npy', save_metric_train)
@@ -283,6 +302,10 @@ def train_model(train_loader, test_loader):
                 print(f"Validation Loss: {test_epoch_loss:.4f}")
                 print(f"Validation Dice: {epoch_metric_test:.4f}")
 
+                # Log to TensorBoard
+                writer.add_scalar('Loss/validation', test_epoch_loss, epoch)
+                writer.add_scalar('Dice/validation', epoch_metric_test, epoch)
+
                 # Save test metrics
                 np.save(MODEL_RESULT_PATH / 'loss_test.npy', save_loss_test)
                 np.save(MODEL_RESULT_PATH / 'metric_test.npy', save_metric_test)
@@ -297,10 +320,14 @@ def train_model(train_loader, test_loader):
                 print(
                     f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
 
+    # Close TensorBoard writer
+    writer.close()
+
     print(f"\n{'='*50}")
-    print(f"Training completed!")
+    print("Training completed!")
     print(f"Best metric: {best_metric:.4f} at epoch {best_metric_epoch}")
     print(f"Model saved to: {MODEL_RESULT_PATH / 'best_metric_model.pth'}")
+    print(f"TensorBoard logs: {tensorboard_log_dir}")
     print(f"{'='*50}")
 
     return save_loss_train, save_loss_test, save_metric_train, save_metric_test
