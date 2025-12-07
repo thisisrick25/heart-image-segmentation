@@ -72,6 +72,20 @@ python train.py
 
 The model checkpoints and metrics will be saved in the result directory specified in `config.py`.
 
+### 5. Monitor Training with TensorBoard
+
+View live training metrics in your browser:
+
+```bash
+tensorboard --logdir=results/tensorboard_logs
+```
+
+Then open [http://localhost:6006](http://localhost:6006) in your browser to see:
+
+- Training & validation loss curves
+- Dice metric progression
+- Real-time updates during training
+
 ## Requirements
 
 - Python 3.x
