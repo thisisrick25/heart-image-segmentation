@@ -19,6 +19,11 @@ if KAGGLE_ENV:
     DATASET_DIR = KAGGLE_INPUT / "medical-segmentation-decathlon-heart" / "Task02_Heart"
 else:
     print("💻 Running locally")
+
+    # Workaround for Kaggle API bug - set empty env var to prevent KeyError
+    if "KAGGLE_API_TOKEN" not in os.environ:
+        os.environ["KAGGLE_API_TOKEN"] = ""
+
     # Download dataset from Kaggle using Kaggle API
     from kaggle.api.kaggle_api_extended import KaggleApi
 
@@ -27,10 +32,6 @@ else:
     # Download dataset directly to datasets directory if not already there
     if not DATASET_DIR.exists() or not (DATASET_DIR / "imagesTr").exists():
         print(f"Downloading dataset to: {DATASET_DIR}")
-
-        # Workaround for Kaggle API bug - set empty env var to prevent KeyError
-        if "KAGGLE_API_TOKEN" not in os.environ:
-            os.environ["KAGGLE_API_TOKEN"] = ""
 
         # Initialize Kaggle API
         api = KaggleApi()
@@ -118,8 +119,8 @@ def prepare_data():
     labels_path = DATASET_DIR / "labelsTr"
 
     # Get all image and label files
-    all_images = sorted(glob.glob(str(images_path / "*.nii.gz")))
-    all_labels = sorted(glob.glob(str(labels_path / "*.nii.gz")))
+    all_images = sorted(glob.glob(str(images_path / "*.nii")))
+    all_labels = sorted(glob.glob(str(labels_path / "*.nii")))
 
     print(f"Found {len(all_images)} images and {len(all_labels)} labels")
 
