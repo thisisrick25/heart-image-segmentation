@@ -1,0 +1,104 @@
+name: Sync Kaggle Training Artifacts
+
+on:
+  workflow_dispatch:
+
+  # Optionally trigger on schedule (check for new outputs daily)
+  # schedule:
+  #   - cron: '0 0 * * *'  # Daily at midnight
+
+jobs:
+  sync-artifacts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+
+      - name: Install Kaggle API
+        run: |
+          pip install kaggle
+
+      - name: Configure Kaggle credentials
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Download Kaggle kernel output
+        run: |
+          # Download directly to results (will create results/results/ due to Kaggle structure)
+          kaggle kernels output thisisrick25/heart-segmentation-training -p ./results
+
+          # Extract nested results directory and remove the extra layer
+          if [ -d "./results/results" ]; then
+            echo "✓ Found nested results directory in Kaggle output"
+            mv ./results/results/* ./results/
+            rm -rf ./results/results
+            echo "✓ Artifacts extracted to results/"
+            ls -lah ./results/
+          else
+            echo "⚠️ No nested results directory found in Kaggle output"
+            echo "Available files:"
+            ls -lah ./results/
+            exit 1
+          fi
+
+      - name: Extract metrics for commit message
+        id: metrics
+        run: |
+          # Try to extract best metrics from output (if available)
+          if [ -f "./results/metric_test.npy" ]; then
+            python -c "
+          import numpy as np
+          metrics = np.load('./results/metric_test.npy')
+          if len(metrics) > 0:
+              best_dice = max(metrics)
+              best_epoch = metrics.argmax() + 1
+              print(f'BEST_DICE={best_dice:.4f}')
+              print(f'BEST_EPOCH={best_epoch}')
+          " >> $GITHUB_OUTPUT || echo "BEST_DICE=N/A" >> $GITHUB_OUTPUT
+          else
+            echo "BEST_DICE=N/A" >> $GITHUB_OUTPUT
+            echo "BEST_EPOCH=N/A" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push artifacts
+        run: |
+          git config user.name "thisisrick25"
+          git config user.email "swapnaneel06@gmail.com"
+
+          git add results/
+
+          # Create commit message with metrics
+          if [ "${{ steps.metrics.outputs.BEST_DICE }}" != "N/A" ]; then
+            COMMIT_MSG="Add Kaggle training artifacts - Epoch ${{ steps.metrics.outputs.BEST_EPOCH }}, Dice: ${{ steps.metrics.outputs.BEST_DICE }} - $(date +'%Y-%m-%d %H:%M:%S')"
+          else
+            COMMIT_MSG="Add Kaggle training artifacts - $(date +'%Y-%m-%d %H:%M:%S')"
+          fi
+
+          git commit -m "$COMMIT_MSG" || echo "No changes to commit"
+          git push
+
+      - name: Create summary
+        run: |
+          echo "## 🎉 Kaggle Artifacts Synced Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Training Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Best Dice Score**: ${{ steps.metrics.outputs.BEST_DICE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Best Epoch**: ${{ steps.metrics.outputs.BEST_EPOCH }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Synced Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -lh ./results/ >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
