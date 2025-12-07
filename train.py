@@ -109,9 +109,9 @@ def prepare_data():
     import glob
     from monai.transforms import (
         Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged,
-        CropForegroundd, Orientationd, Spacingd, ToTensord
+        Orientationd, Spacingd, ToTensord
     )
-    from monai.data import Dataset, DataLoader, CacheDataset
+    from monai.data import CacheDataset, DataLoader
     from monai.utils import set_determinism
 
     set_determinism(seed=SEED)
@@ -143,7 +143,10 @@ def prepare_data():
     print(
         f"Training samples: {len(train_files)}, Validation samples: {len(test_files)}")
 
-    # Define transforms
+    # Import augmentation transforms
+    from monai.transforms import RandFlipd, RandRotate90d, RandShiftIntensityd
+
+    # Define transforms with augmentation for training
     train_transforms = Compose([
         LoadImaged(keys=["image", "label"]),
         EnsureChannelFirstd(keys=["image", "label"]),
@@ -152,6 +155,12 @@ def prepare_data():
         Orientationd(keys=["image", "label"], axcodes="RAS"),
         ScaleIntensityRanged(
             keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        # Data augmentation (only for training)
+        RandFlipd(keys=["image", "label"], spatial_axis=[0], prob=0.5),
+        RandFlipd(keys=["image", "label"], spatial_axis=[1], prob=0.5),
+        RandFlipd(keys=["image", "label"], spatial_axis=[2], prob=0.5),
+        RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 1)),
+        RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.5),
         ToTensord(keys=["image", "label"]),
     ])
 
@@ -166,12 +175,25 @@ def prepare_data():
         ToTensord(keys=["image", "label"]),
     ])
 
-    # Create datasets - use regular Dataset to save memory
-    train_ds = Dataset(data=train_files, transform=train_transforms)
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    # Create datasets - use CacheDataset for faster training
+    print("Creating training dataset with caching...")
+    train_ds = CacheDataset(
+        data=train_files,
+        transform=train_transforms,
+        cache_rate=1.0,
+        num_workers=4
+    )
+    train_loader = DataLoader(
+        train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
 
-    test_ds = Dataset(data=test_files, transform=test_transforms)
-    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE)
+    print("Creating validation dataset with caching...")
+    test_ds = CacheDataset(
+        data=test_files,
+        transform=test_transforms,
+        cache_rate=1.0,
+        num_workers=4
+    )
+    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, num_workers=0)
 
     return train_loader, test_loader
 
@@ -209,6 +231,17 @@ def train_model(train_loader, test_loader):
     optimizer = torch.optim.Adam(
         model.parameters(), LEARNING_RATE, weight_decay=WEIGHT_DECAY, amsgrad=True)
 
+    # Learning rate scheduler - reduce LR when validation plateaus
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='max', factor=0.5, patience=5, verbose=True
+    )
+
+    # Automatic Mixed Precision (AMP) scaler for faster training
+    scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None
+    use_amp = scaler is not None
+    if use_amp:
+        print("✓ Using Automatic Mixed Precision (AMP) for faster training")
+
     # Helper function for dice metric
     def dice_metric(predicted, target):
         dice_value = DiceLoss(
@@ -222,6 +255,26 @@ def train_model(train_loader, test_loader):
     save_loss_test = []
     save_metric_train = []
     save_metric_test = []
+    start_epoch = 0
+
+    # Try to resume from checkpoint
+    checkpoint_path = MODEL_RESULT_PATH / "last_checkpoint.pth"
+    if checkpoint_path.exists():
+        print(f"Found checkpoint at {checkpoint_path}, resuming training...")
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        best_metric = checkpoint['best_metric']
+        best_metric_epoch = checkpoint['best_metric_epoch']
+        save_loss_train = checkpoint.get('loss_train', [])
+        save_loss_test = checkpoint.get('loss_test', [])
+        save_metric_train = checkpoint.get('metric_train', [])
+        save_metric_test = checkpoint.get('metric_test', [])
+        if use_amp and 'scaler_state_dict' in checkpoint:
+            scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        print(
+            f"✓ Resumed from epoch {start_epoch}, best Dice: {best_metric:.4f}")
 
     MODEL_RESULT_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -231,7 +284,7 @@ def train_model(train_loader, test_loader):
     print(f"📊 TensorBoard logs: {tensorboard_log_dir}")
     print(f"   View with: tensorboard --logdir={tensorboard_log_dir}\n")
 
-    for epoch in range(MAX_EPOCHS):
+    for epoch in range(start_epoch, MAX_EPOCHS):
         print(f"\n{'='*50}")
         print(f"Epoch {epoch + 1}/{MAX_EPOCHS}")
         print(f"{'='*50}")
@@ -248,10 +301,20 @@ def train_model(train_loader, test_loader):
             label = label != 0  # Convert to binary
 
             optimizer.zero_grad()
-            outputs = model(image)
-            train_loss = loss_function(outputs, label)
-            train_loss.backward()
-            optimizer.step()
+
+            # Use AMP if available
+            if use_amp:
+                with torch.amp.autocast():
+                    outputs = model(image)
+                    train_loss = loss_function(outputs, label)
+                scaler.scale(train_loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                outputs = model(image)
+                train_loss = loss_function(outputs, label)
+                train_loss.backward()
+                optimizer.step()
 
             train_epoch_loss += train_loss.item()
             train_metric = dice_metric(outputs, label)
@@ -310,6 +373,9 @@ def train_model(train_loader, test_loader):
                 np.save(MODEL_RESULT_PATH / 'loss_test.npy', save_loss_test)
                 np.save(MODEL_RESULT_PATH / 'metric_test.npy', save_metric_test)
 
+                # Update learning rate based on validation performance
+                scheduler.step(epoch_metric_test)
+
                 if epoch_metric_test > best_metric:
                     best_metric = epoch_metric_test
                     best_metric_epoch = epoch + 1
@@ -320,13 +386,30 @@ def train_model(train_loader, test_loader):
                 print(
                     f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
 
+        # Save checkpoint after each epoch for resuming
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_metric': best_metric,
+            'best_metric_epoch': best_metric_epoch,
+            'loss_train': save_loss_train,
+            'loss_test': save_loss_test,
+            'metric_train': save_metric_train,
+            'metric_test': save_metric_test,
+        }
+        if use_amp:
+            checkpoint['scaler_state_dict'] = scaler.state_dict()
+        torch.save(checkpoint, MODEL_RESULT_PATH / "last_checkpoint.pth")
+
     # Close TensorBoard writer
     writer.close()
 
     print(f"\n{'='*50}")
     print("Training completed!")
     print(f"Best metric: {best_metric:.4f} at epoch {best_metric_epoch}")
-    print(f"Model saved to: {MODEL_RESULT_PATH / 'best_metric_model.pth'}")
+    print(f"Best model: {MODEL_RESULT_PATH / 'best_metric_model.pth'}")
+    print(f"Last checkpoint: {MODEL_RESULT_PATH / 'last_checkpoint.pth'}")
     print(f"TensorBoard logs: {tensorboard_log_dir}")
     print(f"{'='*50}")
 
