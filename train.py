@@ -108,9 +108,9 @@ def prepare_data():
     import glob
     from monai.transforms import (
         Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged,
-        Orientationd, Spacingd, ToTensord
+        Orientationd, Spacingd, ToTensord, DivisiblePadd, CropForegroundd
     )
-    from monai.data import CacheDataset, DataLoader
+    from monai.data import CacheDataset, Dataset, DataLoader
     from monai.utils import set_determinism
 
     set_determinism(seed=SEED)
@@ -154,6 +154,9 @@ def prepare_data():
         Orientationd(keys=["image", "label"], axcodes="RAS"),
         ScaleIntensityRanged(
             keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        CropForegroundd(keys=["image", "label"], source_key="image"),
+        # Pad to ensure dimensions are divisible by 16 (UNet with 4 downsampling layers: 2^4=16)
+        DivisiblePadd(keys=["image", "label"], k=16),
         # Data augmentation (only for training)
         RandFlipd(keys=["image", "label"], spatial_axis=[0], prob=0.5),
         RandFlipd(keys=["image", "label"], spatial_axis=[1], prob=0.5),
@@ -171,27 +174,36 @@ def prepare_data():
         Orientationd(keys=["image", "label"], axcodes="RAS"),
         ScaleIntensityRanged(
             keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        CropForegroundd(keys=["image", "label"], source_key="image"),
+        # Pad to ensure dimensions are divisible by 16 (UNet with 4 downsampling layers: 2^4=16)
+        DivisiblePadd(keys=["image", "label"], k=16),
         ToTensord(keys=["image", "label"]),
     ])
 
-    # Create datasets - use CacheDataset for faster training
-    print("Creating training dataset with caching...")
-    train_ds = CacheDataset(
-        data=train_files,
-        transform=train_transforms,
-        cache_rate=1.0,
-        num_workers=4
-    )
+    # Create datasets - use CacheDataset on Kaggle (more RAM), regular Dataset locally
+    if KAGGLE_ENV:
+        print("Creating training dataset with caching (Kaggle)...")
+        train_ds = CacheDataset(
+            data=train_files,
+            transform=train_transforms,
+            cache_rate=1.0,
+            num_workers=4
+        )
+        print("Creating validation dataset with caching (Kaggle)...")
+        test_ds = CacheDataset(
+            data=test_files,
+            transform=test_transforms,
+            cache_rate=1.0,
+            num_workers=4
+        )
+    else:
+        print("Creating training dataset (local - no caching)...")
+        train_ds = Dataset(data=train_files, transform=train_transforms)
+        print("Creating validation dataset (local - no caching)...")
+        test_ds = Dataset(data=test_files, transform=test_transforms)
+
     train_loader = DataLoader(
         train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-
-    print("Creating validation dataset with caching...")
-    test_ds = CacheDataset(
-        data=test_files,
-        transform=test_transforms,
-        cache_rate=1.0,
-        num_workers=4
-    )
     test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, num_workers=0)
 
     return train_loader, test_loader
@@ -216,7 +228,7 @@ def train_model(train_loader, test_loader):
 
     # Create model
     model = UNet(
-        dimensions=3,
+        spatial_dims=3,
         in_channels=1,
         out_channels=2,
         channels=(16, 32, 64, 128, 256),
@@ -232,7 +244,7 @@ def train_model(train_loader, test_loader):
 
     # Learning rate scheduler - reduce LR when validation plateaus
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.5, patience=5, verbose=True
+        optimizer, mode='max', factor=0.5, patience=5
     )
 
     # Automatic Mixed Precision (AMP) scaler for faster training
@@ -384,8 +396,12 @@ def train_model(train_loader, test_loader):
                 writer.add_scalar('Dice/validation', epoch_metric_test, epoch)
 
                 # Save test metrics
-                np.save(result_path / 'loss_test.npy', save_loss_test)
-                np.save(result_path / 'metric_test.npy', save_metric_test)
+                try:
+                    np.save(result_path / 'loss_test.npy', save_loss_test)
+                    np.save(result_path / 'metric_test.npy', save_metric_test)
+                except OSError as e:
+                    print(
+                        f"⚠️  Warning: Failed to save metrics (disk space?): {e}")
 
                 # Update learning rate based on validation performance
                 scheduler.step(epoch_metric_test)
@@ -393,28 +409,36 @@ def train_model(train_loader, test_loader):
                 if epoch_metric_test > best_metric:
                     best_metric = epoch_metric_test
                     best_metric_epoch = epoch + 1
-                    torch.save(model.state_dict(),
-                               result_path / "best_metric_model.pth")
-                    print(f"✓ New best model saved! Dice: {best_metric:.4f}")
+                    try:
+                        torch.save(model.state_dict(),
+                                   result_path / "best_metric_model.pth")
+                        print(
+                            f"✓ New best model saved! Dice: {best_metric:.4f}")
+                    except (OSError, RuntimeError) as e:
+                        print(
+                            f"⚠️  Warning: Failed to save best model (disk space?): {e}")
 
                 print(
                     f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
 
         # Save checkpoint after each epoch for resuming
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'best_metric': best_metric,
-            'best_metric_epoch': best_metric_epoch,
-            'loss_train': save_loss_train,
-            'loss_test': save_loss_test,
-            'metric_train': save_metric_train,
-            'metric_test': save_metric_test,
-        }
-        if use_amp:
-            checkpoint['scaler_state_dict'] = scaler.state_dict()
-        torch.save(checkpoint, result_path / "last_checkpoint.pth")
+        try:
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'best_metric': best_metric,
+                'best_metric_epoch': best_metric_epoch,
+                'loss_train': save_loss_train,
+                'loss_test': save_loss_test,
+                'metric_train': save_metric_train,
+                'metric_test': save_metric_test,
+            }
+            if use_amp:
+                checkpoint['scaler_state_dict'] = scaler.state_dict()
+            torch.save(checkpoint, result_path / "last_checkpoint.pth")
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to save checkpoint: {e}")
 
     # Close TensorBoard writer
     writer.close()
