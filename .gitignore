@@ -2,7 +2,6 @@
 
 # Dataset directories - DO NOT COMMIT LARGE FILES
 datasets/
-data/
 *.tar
 *.tar.gz
 *.zip
