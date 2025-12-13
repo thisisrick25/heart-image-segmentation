@@ -1,16 +1,16 @@
-# 🫀 Heart Image Segmentation with 3D UNet
+# Heart Image Segmentation with 3D UNet
 
 A production-ready deep learning pipeline for automatic heart segmentation from 3D medical images using MONAI and PyTorch. This project is designed for seamless local development, GitHub version control, and Kaggle GPU training.
 
-## ✨ Key Features
+## Key Features
 
-### 🚀 **Unified Workflow**
+### **Unified Workflow**
 
 - **Local Development**: Code and test on your machine with 1-epoch quick runs
 - **GitHub Integration**: Version control with automatic artifact tracking
 - **Kaggle Training**: Seamlessly push and train with free GPU/TPU resources
 
-### 🧠 **Advanced Training Features**
+### **Advanced Training Features**
 
 - **3D UNet Architecture**: State-of-the-art medical image segmentation
 - **Automatic Mixed Precision (AMP)**: 2-3x faster training on GPU
@@ -19,13 +19,13 @@ A production-ready deep learning pipeline for automatic heart segmentation from 
 - **Checkpoint Resuming**: Recover from interruptions automatically
 - **CacheDataset**: 5-10x faster data loading with intelligent caching
 
-### 📊 **Monitoring & Visualization**
+### **Monitoring & Visualization**
 
 - **TensorBoard Integration**: Real-time training metrics visualization
 - **Interactive Notebook**: Explore data, visualize results, and test inference
 - **Comprehensive Metrics**: Dice score, loss curves, and model performance tracking
 
-## 📦 Dataset
+## Dataset
 
 This project uses the **Task02_Heart** dataset from the [Medical Segmentation Decathlon](https://medicaldecathlon.com/):
 
@@ -34,7 +34,7 @@ This project uses the **Task02_Heart** dataset from the [Medical Segmentation De
 - **Format**: NIfTI (.nii.gz)
 - **Auto-download**: The script automatically downloads the dataset on first run (local environment only)
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ├── train.py              # Main training script (local + Kaggle compatible)
@@ -47,7 +47,7 @@ This project uses the **Task02_Heart** dataset from the [Medical Segmentation De
 └── datasets/             # Downloaded dataset (local only, gitignored)
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Local Development
 
@@ -129,7 +129,7 @@ This project uses the **Task02_Heart** dataset from the [Medical Segmentation De
      - `KAGGLE_USERNAME`: Your Kaggle username
      - `KAGGLE_KEY`: Your Kaggle API key (from kaggle.json)
 
-## 🎯 Workflow
+## Workflow
 
 ```mermaid
 graph LR
@@ -141,7 +141,7 @@ graph LR
     F --> G[Commit to GitHub]
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Edit `config.py` to customize training:
 
@@ -158,7 +158,7 @@ SPATIAL_SIZE = [128, 128, 64]  # Input volume size
 PIXDIM = (1.5, 1.5, 1.0)       # Voxel spacing
 ```
 
-## 📊 Features in Detail
+## Features in Detail
 
 ### Automatic Mixed Precision (AMP)
 
@@ -185,7 +185,7 @@ PIXDIM = (1.5, 1.5, 1.0)       # Voxel spacing
 - Reduces LR by 50% if no improvement for 5 epochs
 - Helps achieve better convergence
 
-## 📈 Results
+## Results
 
 The model is evaluated using the Dice similarity coefficient:
 
@@ -196,7 +196,7 @@ The model is evaluated using the Dice similarity coefficient:
 
 Example outputs are visualized in `test.ipynb`.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Deep Learning**: PyTorch, MONAI
 - **Medical Imaging**: NiBabel, SimpleITK
@@ -205,7 +205,7 @@ Example outputs are visualized in `test.ipynb`.
 - **Notebooks**: Jupyter, ipywidgets
 - **APIs**: Kaggle API
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Feel free to:
 
@@ -213,17 +213,17 @@ Contributions are welcome! Feel free to:
 - Suggest features
 - Submit pull requests
 
-## 📄 License
+## License
 
 This project is open source and available under the MIT License.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Dataset**: [Medical Segmentation Decathlon](http://medicaldecathlon.com/)
 - **Framework**: [MONAI - Medical Open Network for AI](https://monai.io/)
 - **Platform**: [Kaggle](https://www.kaggle.com/) for free GPU resources
 
-## 📚 References
+## References
 
 - [Medical Segmentation Decathlon Paper](https://arxiv.org/abs/1902.09063)
 - [MONAI Documentation](https://docs.monai.io/)
