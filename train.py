@@ -12,13 +12,13 @@ import config
 KAGGLE_ENV = os.environ.get('KAGGLE_KERNEL_RUN_TYPE') is not None
 
 if KAGGLE_ENV:
-    print("🌐 Running on Kaggle environment")
+    print("Running on Kaggle environment")
     KAGGLE_INPUT = Path("/kaggle/input")
     KAGGLE_WORKING = Path("/kaggle/working")
     # Use the Kaggle dataset - dataset is inside Task02_Heart subdirectory
     DATASET_DIR = KAGGLE_INPUT / "medical-segmentation-decathlon-heart" / "Task02_Heart"
 else:
-    print("💻 Running locally")
+    print("Running locally")
 
     # Workaround for Kaggle API bug - set empty env var to prevent KeyError
     if "KAGGLE_API_TOKEN" not in os.environ:
@@ -62,11 +62,11 @@ else:
             print(f"Cleaning up {len(artifact_files)} artifact files (._*)...")
             for artifact in artifact_files:
                 artifact.unlink()
-            print("✓ Artifact files removed")
+            print("Artifact files removed")
 
-        print("✓ Dataset downloaded to datasets/ directory")
+        print("Dataset downloaded to datasets/ directory")
     else:
-        print("✓ Using existing dataset in project directory")
+        print("Using existing dataset in project directory")
 
     # Locally: results/ dir exists but is tracked in git
     MODEL_RESULT_PATH = Path(config.MODEL_RESULT_PATH)
@@ -88,10 +88,10 @@ print(f"Training for {MAX_EPOCHS} epoch(s)")
 def check_dataset():
     """Verify dataset is available"""
     if DATASET_DIR.exists() and (DATASET_DIR / "imagesTr").exists():
-        print(f"✓ Dataset found at {DATASET_DIR}")
+        print(f"Dataset found at {DATASET_DIR}")
         return
     else:
-        print("⚠️ Dataset not found!")
+        print("WARNING: Dataset not found!")
         if KAGGLE_ENV:
             print("Please attach the dataset: https://www.kaggle.com/datasets/vivekprajapati2048/medical-segmentation-decathlon-heart")
             print(f"Expected path: {DATASET_DIR}")
@@ -251,7 +251,7 @@ def train_model(train_loader, test_loader):
     scaler = torch.amp.GradScaler() if torch.cuda.is_available() else None
     use_amp = scaler is not None
     if use_amp:
-        print("✓ Using Automatic Mixed Precision (AMP) for faster training")
+        print("Using Automatic Mixed Precision (AMP) for faster training")
 
     # Helper function for dice metric
     def dice_metric(predicted, target):
@@ -286,14 +286,14 @@ def train_model(train_loader, test_loader):
         if use_amp and 'scaler_state_dict' in checkpoint:
             scaler.load_state_dict(checkpoint['scaler_state_dict'])
         print(
-            f"✓ Resumed from epoch {start_epoch}, best Dice: {best_metric:.4f}")
+            f"Resumed from epoch {start_epoch}, best Dice: {best_metric:.4f}")
 
     result_path.mkdir(parents=True, exist_ok=True)
 
     # Initialize TensorBoard writer
     tensorboard_log_dir = result_path / "tensorboard_logs"
     writer = SummaryWriter(log_dir=str(tensorboard_log_dir))
-    print(f"📊 TensorBoard logs: {tensorboard_log_dir}")
+    print(f"TensorBoard logs: {tensorboard_log_dir}")
     print(f"   View with: tensorboard --logdir={tensorboard_log_dir}\n")
 
     # Load TensorBoard inline in Kaggle notebooks
@@ -401,7 +401,7 @@ def train_model(train_loader, test_loader):
                     np.save(result_path / 'metric_test.npy', save_metric_test)
                 except OSError as e:
                     print(
-                        f"⚠️  Warning: Failed to save metrics (disk space?): {e}")
+                        f"WARNING: Failed to save metrics (disk space?): {e}")
 
                 # Update learning rate based on validation performance
                 scheduler.step(epoch_metric_test)
@@ -413,10 +413,10 @@ def train_model(train_loader, test_loader):
                         torch.save(model.state_dict(),
                                    result_path / "best_metric_model.pth")
                         print(
-                            f"✓ New best model saved! Dice: {best_metric:.4f}")
+                            f"New best model saved! Dice: {best_metric:.4f}")
                     except (OSError, RuntimeError) as e:
                         print(
-                            f"⚠️  Warning: Failed to save best model (disk space?): {e}")
+                            f"WARNING: Failed to save best model (disk space?): {e}")
 
                 print(
                     f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
@@ -438,7 +438,7 @@ def train_model(train_loader, test_loader):
                 checkpoint['scaler_state_dict'] = scaler.state_dict()
             torch.save(checkpoint, result_path / "last_checkpoint.pth")
         except Exception as e:
-            print(f"⚠️  Warning: Failed to save checkpoint: {e}")
+            print(f"WARNING: Failed to save checkpoint: {e}")
 
     # Close TensorBoard writer
     writer.close()
@@ -446,9 +446,9 @@ def train_model(train_loader, test_loader):
     # On Kaggle, artifacts are saved to /kaggle/working/
     # GitHub Actions will automatically pull and commit them to results/
     if KAGGLE_ENV:
-        print(f"✓ Training artifacts saved to: {KAGGLE_WORKING}")
-        print(f"✓ TensorBoard logs saved to: {tensorboard_log_dir}")
-        print("\n💡 Artifacts will be automatically committed to GitHub via GitHub Actions")
+        print(f"Training artifacts saved to: {KAGGLE_WORKING}")
+        print(f"TensorBoard logs saved to: {tensorboard_log_dir}")
+        print("\nArtifacts will be automatically committed to GitHub via GitHub Actions")
         print("   Check the Actions tab in your GitHub repo after kernel completes.")
 
     print(f"\n{'='*50}")
@@ -499,7 +499,7 @@ def plot_metrics(loss_train, loss_test, metric_train, metric_test):
         plt.savefig(result_path / "training_metrics.png",
                     dpi=150, bbox_inches='tight')
         print(
-            f"\n✓ Training plots saved to: {result_path / 'training_metrics.png'}")
+            f"\nTraining plots saved to: {result_path / 'training_metrics.png'}")
 
         if not KAGGLE_ENV:
             plt.show()
@@ -509,26 +509,26 @@ def plot_metrics(loss_train, loss_test, metric_train, metric_test):
 
 def main():
     """Main training pipeline"""
-    print("🚀 Starting Heart Segmentation Training Pipeline")
+    print("Starting Heart Segmentation Training Pipeline")
     print(f"Environment: {'Kaggle' if KAGGLE_ENV else 'Local'}")
 
     # Step 1: Verify dataset is available
     check_dataset()
 
     # Step 2: Prepare data
-    print("\n📊 Preparing data...")
+    print("\nPreparing data...")
     train_loader, test_loader = prepare_data()
 
     # Step 3: Train model
-    print("\n🏋️ Starting training...")
+    print("\nStarting training...")
     loss_train, loss_test, metric_train, metric_test = train_model(
         train_loader, test_loader)
 
     # Step 4: Plot results
-    print("\n📈 Generating plots...")
+    print("\nGenerating plots...")
     plot_metrics(loss_train, loss_test, metric_train, metric_test)
 
-    print("\n✓ Pipeline completed successfully!")
+    print("\nPipeline completed successfully!")
 
 
 if __name__ == '__main__':
