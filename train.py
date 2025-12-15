@@ -3,12 +3,60 @@ Training Script for Heart Segmentation
 Works both locally and on Kaggle (auto-detects environment)
 """
 
+# Install required packages on Kaggle (no-op on local if already installed)
+import subprocess
+import sys
+import importlib.util
 import os
-import torch
 from pathlib import Path
-import config
 
-# Detect if running on Kaggle
+if importlib.util.find_spec("torch") is None:
+    print("Installing PyTorch...")
+    subprocess.check_call([sys.executable, "-m", "pip",
+                          "install", "-q", "torch"])
+
+if importlib.util.find_spec("monai") is None:
+    print("Installing MONAI...")
+    subprocess.check_call([sys.executable, "-m", "pip",
+                          "install", "-q", "monai"])
+
+if importlib.util.find_spec("matplotlib") is None:
+    print("Installing matplotlib...")
+    subprocess.check_call([sys.executable, "-m", "pip",
+                          "install", "-q", "matplotlib"])
+
+if importlib.util.find_spec("tensorboard") is None:
+    print("Installing tensorboard...")
+    subprocess.check_call([sys.executable, "-m", "pip",
+                          "install", "-q", "tensorboard"])
+
+# ============================================================================
+# CONFIGURATION (inlined from config.py for single-file Kaggle compatibility)
+# ============================================================================
+BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+
+# Training configuration
+SEED = 0
+BATCH_SIZE = 1
+MAX_EPOCHS_KAGGLE = 20      # Full training on Kaggle GPU
+MAX_EPOCHS_LOCAL = 1        # Quick test locally
+LEARNING_RATE = 1e-5
+WEIGHT_DECAY = 1e-5
+TEST_INTERVAL = 1
+TRAIN_RATIO = 0.8           # 80% training, 20% validation
+
+# Model/preprocessing configuration
+SPATIAL_SIZE = [128, 128, 64]
+PIXDIM = (1.5, 1.5, 1.0)
+A_MIN = 0
+A_MAX = 2000
+
+# Kaggle dataset identifier
+KAGGLE_DATASET = "thisisrick25/medical-segmentation-decathlon-heart"
+
+# ============================================================================
+# ENVIRONMENT DETECTION
+# ============================================================================
 KAGGLE_ENV = os.environ.get('KAGGLE_KERNEL_RUN_TYPE') is not None
 
 if KAGGLE_ENV:
@@ -17,6 +65,8 @@ if KAGGLE_ENV:
     KAGGLE_WORKING = Path("/kaggle/working")
     # Use the Kaggle dataset - dataset is inside Task02_Heart subdirectory
     DATASET_DIR = KAGGLE_INPUT / "medical-segmentation-decathlon-heart" / "Task02_Heart"
+    MODEL_RESULT_PATH = KAGGLE_WORKING
+    MAX_EPOCHS = MAX_EPOCHS_KAGGLE
 else:
     print("Running locally")
 
@@ -27,7 +77,9 @@ else:
     # Download dataset from Kaggle using Kaggle API
     from kaggle.api.kaggle_api_extended import KaggleApi
 
-    DATASET_DIR = Path(config.DATASET_DIR)
+    DATASET_DIR = BASE_DIR / "datasets"
+    MODEL_RESULT_PATH = BASE_DIR / "results"
+    MAX_EPOCHS = MAX_EPOCHS_LOCAL
 
     # Download dataset directly to datasets directory if not already there
     if not DATASET_DIR.exists() or not (DATASET_DIR / "imagesTr").exists():
@@ -43,7 +95,7 @@ else:
         DATASET_DIR.mkdir(parents=True, exist_ok=True)
 
         api.dataset_download_files(
-            config.KAGGLE_DATASET,
+            KAGGLE_DATASET,
             path=DATASET_DIR,
             unzip=True,
             quiet=False
@@ -67,20 +119,6 @@ else:
         print("Dataset downloaded to datasets/ directory")
     else:
         print("Using existing dataset in project directory")
-
-    # Locally: results/ dir exists but is tracked in git
-    MODEL_RESULT_PATH = Path(config.MODEL_RESULT_PATH)
-SEED = config.SEED
-BATCH_SIZE = config.BATCH_SIZE
-MAX_EPOCHS = config.MAX_EPOCHS_LOCAL if not KAGGLE_ENV else config.MAX_EPOCHS
-LEARNING_RATE = config.LEARNING_RATE
-WEIGHT_DECAY = config.WEIGHT_DECAY
-TEST_INTERVAL = config.TEST_INTERVAL
-TRAIN_RATIO = config.TRAIN_RATIO
-SPATIAL_SIZE = config.SPATIAL_SIZE
-PIXDIM = config.PIXDIM
-A_MIN = config.A_MIN
-A_MAX = config.A_MAX
 
 print(f"Training for {MAX_EPOCHS} epoch(s)")
 
@@ -216,6 +254,7 @@ def train_model(train_loader, test_loader):
     from monai.losses import DiceLoss
     from tqdm import tqdm
     import numpy as np
+    import torch
     from torch.utils.tensorboard import SummaryWriter
 
     # Setup device
@@ -330,7 +369,7 @@ def train_model(train_loader, test_loader):
 
             # Use AMP if available
             if use_amp:
-                with torch.amp.autocast():
+                with torch.amp.autocast(device_type=device.type):
                     outputs = model(image)
                     train_loss = loss_function(outputs, label)
                 scaler.scale(train_loss).backward()
