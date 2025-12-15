@@ -294,6 +294,9 @@ def train_model(train_loader, test_loader):
 
     # Helper function for dice metric
     def dice_metric(predicted, target):
+        # Convert predicted to float32 to ensure numerical stability
+        # (important when using AMP which may output float16)
+        predicted = predicted.float()
         dice_value = DiceLoss(
             to_onehot_y=True, sigmoid=True, squared_pred=True)
         return 1 - dice_value(predicted, target).item()
