@@ -1,0 +1,16 @@
+{
+  "best_metric": 0.42686185240745544,
+  "best_epoch": 17,
+  "final_training_loss": 0.5739981792867184,
+  "final_validation_loss": 0.5745323151350021,
+  "final_training_dice": 0.4260017201304436,
+  "final_validation_dice": 0.42546768486499786,
+  "num_epochs_run": 22,
+  "duration_seconds": 593.3867733478546,
+  "artifacts": {
+    "best_model": "/kaggle/working/best_metric_model.pth",
+    "last_checkpoint": "/kaggle/working/last_checkpoint.pth",
+    "training_plot": "/kaggle/working/training_metrics.png",
+    "tensorboard_dir": "/kaggle/working/tensorboard_logs"
+  }
+}
