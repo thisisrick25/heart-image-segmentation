@@ -38,8 +38,9 @@ BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 # Training configuration
 SEED = 0
 BATCH_SIZE = 1
-MAX_EPOCHS_KAGGLE = 20      # Full training on Kaggle GPU
+MAX_EPOCHS_KAGGLE = 30      # Full training on Kaggle GPU (with early stopping)
 MAX_EPOCHS_LOCAL = 1        # Quick test locally
+EARLY_STOPPING_PATIENCE = 5   # Stop if validation doesn't improve for 5 epochs
 LEARNING_RATE = 1e-5
 WEIGHT_DECAY = 1e-5
 TEST_INTERVAL = 1
@@ -309,6 +310,7 @@ def train_model(train_loader, test_loader):
     save_metric_train = []
     save_metric_test = []
     start_epoch = 0
+    epochs_no_improve = 0  # Counter for early stopping
 
     # Try to resume from checkpoint
     result_path = KAGGLE_WORKING if KAGGLE_ENV else MODEL_RESULT_PATH
@@ -451,6 +453,7 @@ def train_model(train_loader, test_loader):
                 if epoch_metric_test > best_metric:
                     best_metric = epoch_metric_test
                     best_metric_epoch = epoch + 1
+                    epochs_no_improve = 0  # Reset early stopping counter
                     try:
                         torch.save(model.state_dict(),
                                    result_path / "best_metric_model.pth")
@@ -459,6 +462,18 @@ def train_model(train_loader, test_loader):
                     except (OSError, RuntimeError) as e:
                         print(
                             f"WARNING: Failed to save best model (disk space?): {e}")
+                else:
+                    epochs_no_improve += 1
+                    print(
+                        f"No improvement. Patience: {epochs_no_improve}/{EARLY_STOPPING_PATIENCE}")
+
+                    # Early stopping
+                    if epochs_no_improve >= EARLY_STOPPING_PATIENCE:
+                        print(
+                            f"\nEarly stopping triggered after {epoch + 1} epochs")
+                        print(
+                            f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
+                        break
 
                 print(
                     f"Best Dice: {best_metric:.4f} at epoch {best_metric_epoch}")
