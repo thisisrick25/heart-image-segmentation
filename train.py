@@ -256,6 +256,8 @@ def train_model(train_loader, test_loader):
     from tqdm import tqdm
     import numpy as np
     import torch
+    import time
+    import json
     from torch.utils.tensorboard import SummaryWriter
 
     # Setup device
@@ -353,6 +355,9 @@ def train_model(train_loader, test_loader):
         except Exception as e:
             print(f"Could not load inline TensorBoard: {e}")
             print("TensorBoard logs will be saved for later review.")
+
+    # record start time for training
+    start_time = time.time()
 
     for epoch in range(start_epoch, MAX_EPOCHS):
         print(f"\n{'='*50}")
@@ -505,6 +510,60 @@ def train_model(train_loader, test_loader):
     if KAGGLE_ENV:
         print(f"Training artifacts saved to: {KAGGLE_WORKING}")
         print(f"TensorBoard logs saved to: {tensorboard_log_dir}")
+
+    # Save a training summary (JSON + Markdown) with key metrics and artifacts
+    try:
+        end_time = time.time()
+        duration = end_time - start_time if 'start_time' in locals() else None
+
+        summary = {
+            'best_metric': float(best_metric) if best_metric is not None else None,
+            'best_epoch': int(best_metric_epoch) if best_metric_epoch is not None else None,
+            'final_training_loss': float(save_loss_train[-1]) if len(save_loss_train) > 0 else None,
+            'final_validation_loss': float(save_loss_test[-1]) if len(save_loss_test) > 0 else None,
+            'final_training_dice': float(save_metric_train[-1]) if len(save_metric_train) > 0 else None,
+            'final_validation_dice': float(save_metric_test[-1]) if len(save_metric_test) > 0 else None,
+            'num_epochs_run': int(epoch + 1),
+            'duration_seconds': float(duration) if duration is not None else None,
+            'artifacts': {
+                'best_model': str(result_path / 'best_metric_model.pth'),
+                'last_checkpoint': str(result_path / 'last_checkpoint.pth'),
+                'training_plot': str(result_path / 'training_metrics.png'),
+                'tensorboard_dir': str(tensorboard_log_dir)
+            }
+        }
+
+        # Write JSON summary
+        with open(result_path / 'training_summary.json', 'w', encoding='utf-8') as f:
+            json.dump(summary, f, indent=2)
+
+        # Write a human-readable Markdown summary
+        md_lines = [
+            '# Training Summary\n',
+            f"**Best Validation Dice**: {summary['best_metric']:.4f} at epoch {summary['best_epoch']}\n" if summary['best_metric'] is not None else 'N/A\n',
+            f"**Final Training Loss**: {summary['final_training_loss']:.4f}\n" if summary['final_training_loss'] is not None else 'N/A\n',
+            f"**Final Validation Loss**: {summary['final_validation_loss']:.4f}\n" if summary['final_validation_loss'] is not None else 'N/A\n',
+            f"**Final Training Dice**: {summary['final_training_dice']:.4f}\n" if summary['final_training_dice'] is not None else 'N/A\n',
+            f"**Final Validation Dice**: {summary['final_validation_dice']:.4f}\n" if summary['final_validation_dice'] is not None else 'N/A\n',
+            f"**Epochs Run**: {summary['num_epochs_run']}\n",
+            f"**Duration (s)**: {summary['duration_seconds']:.1f}\n" if summary['duration_seconds'] is not None else '',
+            '\n',
+            '### Artifacts\n',
+            f"- Best model: {summary['artifacts']['best_model']}\n",
+            f"- Last checkpoint: {summary['artifacts']['last_checkpoint']}\n",
+            f"- Training plot: {summary['artifacts']['training_plot']}\n",
+            f"- TensorBoard logs: {summary['artifacts']['tensorboard_dir']}\n",
+            '\n',
+            '![Training Metrics](training_metrics.png)\n'
+        ]
+
+        with open(result_path / 'training_summary.md', 'w', encoding='utf-8') as f:
+            f.writelines(md_lines)
+
+        print(
+            f"Training summary saved: {result_path / 'training_summary.json'} and training_summary.md")
+    except Exception as e:
+        print(f"WARNING: Failed to write training summary: {e}")
 
     print(f"\n{'='*50}")
     print("Training completed!")
