@@ -2,6 +2,20 @@
 
 A deep learning pipeline for automatic heart segmentation from 3D cardiac MRI images using MONAI and PyTorch. Designed for seamless local development and Kaggle GPU training.
 
+## Training Results
+
+### Training Curves
+
+![Training Metrics](results/training_metrics.png)
+
+Figure: Training and validation loss and Dice metric curves (saved to `results/training_metrics.png`).
+
+### Performance Metrics
+
+The full, machine-generated training summary is saved to `results/training_summary.md` after each run. It contains best metrics, epoch, training duration, and links to artifacts (models, logs, plots).
+
+[View training summary (results/training_summary.md)](results/training_summary.md)
+
 ---
 
 ## Table of Contents
@@ -17,7 +31,6 @@ A deep learning pipeline for automatic heart segmentation from 3D cardiac MRI im
   - [Kaggle Training](#kaggle-training)
   - [Kaggle CLI Commands](#kaggle-cli-commands)
 - [Configuration](#configuration)
-- [Training Results](#training-results)
 - [Model Architecture](#model-architecture)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
@@ -40,16 +53,16 @@ This project implements a 3D UNet model for cardiac MRI segmentation using the M
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **3D UNet** | State-of-the-art architecture for volumetric medical image segmentation |
-| **MONAI Framework** | Medical imaging-specific transforms and utilities |
-| **Auto Environment Detection** | Automatically switches between local/Kaggle configurations |
-| **Mixed Precision Training** | 2-3x faster training with AMP on GPU |
-| **Early Stopping** | Stops training when validation stops improving (patience=5) |
-| **Checkpoint Resuming** | Resume training from last saved checkpoint |
-| **Data Augmentation** | Random flips, rotations, intensity shifts |
-| **TensorBoard Logging** | Real-time loss and metric visualization |
+| Feature                        | Description                                                             |
+| ------------------------------ | ----------------------------------------------------------------------- |
+| **3D UNet**                    | State-of-the-art architecture for volumetric medical image segmentation |
+| **MONAI Framework**            | Medical imaging-specific transforms and utilities                       |
+| **Auto Environment Detection** | Automatically switches between local/Kaggle configurations              |
+| **Mixed Precision Training**   | 2-3x faster training with AMP on GPU                                    |
+| **Early Stopping**             | Stops training when validation stops improving (patience=5)             |
+| **Checkpoint Resuming**        | Resume training from last saved checkpoint                              |
+| **Data Augmentation**          | Random flips, rotations, intensity shifts                               |
+| **TensorBoard Logging**        | Real-time loss and metric visualization                                 |
 
 ---
 
@@ -57,11 +70,11 @@ This project implements a 3D UNet model for cardiac MRI segmentation using the M
 
 ### Medical Segmentation Decathlon - Task02_Heart
 
-| Property | Value |
-|----------|-------|
-| **Images** | 20 cardiac MRI scans |
-| **Format** | NIfTI (.nii) |
-| **Task** | Binary segmentation (heart vs background) |
+| Property   | Value                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------- |
+| **Images** | 20 cardiac MRI scans                                                                                |
+| **Format** | NIfTI (.nii)                                                                                        |
+| **Task**   | Binary segmentation (heart vs background)                                                           |
 | **Source** | [Kaggle Dataset](https://www.kaggle.com/datasets/thisisrick25/medical-segmentation-decathlon-heart) |
 
 The dataset is automatically downloaded when running locally (requires Kaggle API credentials).
@@ -117,10 +130,10 @@ heart-image-segmentation/
 
    ```bash
    python -m venv .venv
-   
+
    # Windows
    .venv\Scripts\activate
-   
+
    # Linux/macOS
    source .venv/bin/activate
    ```
@@ -265,13 +278,13 @@ kaggle kernels status thisisrick25/heart-image-segmentation
 
 **Status values:**
 
-| Status | Meaning |
-|--------|---------|
-| `queued` | Waiting to start |
-| `running` | Currently executing |
-| `complete` | Finished successfully |
-| `error` | Failed with error |
-| `cancelAcknowledged` | Cancelled by user |
+| Status               | Meaning               |
+| -------------------- | --------------------- |
+| `queued`             | Waiting to start      |
+| `running`            | Currently executing   |
+| `complete`           | Finished successfully |
+| `error`              | Failed with error     |
+| `cancelAcknowledged` | Cancelled by user     |
 
 #### Download Kernel Output
 
@@ -358,49 +371,17 @@ A_MAX = 2000                  # Intensity window max
 
 ```json
 {
-    "id": "thisisrick25/heart-image-segmentation",
-    "title": "Heart Image Segmentation",
-    "code_file": "train.py",
-    "language": "python",
-    "kernel_type": "script",
-    "is_private": false,
-    "enable_gpu": true,
-    "enable_internet": true,
-    "dataset_sources": [
-        "thisisrick25/medical-segmentation-decathlon-heart"
-    ]
+  "id": "thisisrick25/heart-image-segmentation",
+  "title": "Heart Image Segmentation",
+  "code_file": "train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": ["thisisrick25/medical-segmentation-decathlon-heart"]
 }
 ```
-
----
-
-## Training Results
-
-### Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| **Best Validation Dice** | 0.427 |
-| **Best Epoch** | 15 |
-| **Final Training Loss** | 0.574 |
-| **Final Validation Loss** | 0.575 |
-| **Training Time (Kaggle P100)** | ~10 minutes |
-
-### Training Curves
-
-The training produces four key plots:
-
-1. **Training Loss** - Decreases smoothly from 0.60 to 0.57
-2. **Validation Loss** - Follows training loss closely (minimal overfitting)
-3. **Training Dice** - Increases from 0.40 to 0.43
-4. **Validation Dice** - Peaks at 0.427 around epoch 15
-
-### Interpretation
-
-- **Dice Score 0.427**: Indicates 42.7% overlap between predicted and ground truth segmentation
-- **Convergence**: Model converges smoothly without instability
-- **Overfitting**: Minimal - training and validation curves stay close
-- **Early Stopping**: Prevents wasted computation after plateau
 
 ---
 
@@ -425,7 +406,7 @@ Input (1, D, H, W)
     │   └── UpConv + Concat + Conv Block (16 channels)
     │
     └── Output Conv (2 channels) → Sigmoid
-    
+
 Output (2, D, H, W) [Background, Heart]
 ```
 
