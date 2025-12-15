@@ -505,8 +505,6 @@ def train_model(train_loader, test_loader):
     if KAGGLE_ENV:
         print(f"Training artifacts saved to: {KAGGLE_WORKING}")
         print(f"TensorBoard logs saved to: {tensorboard_log_dir}")
-        print("\nArtifacts will be automatically committed to GitHub via GitHub Actions")
-        print("   Check the Actions tab in your GitHub repo after kernel completes.")
 
     print(f"\n{'='*50}")
     print("Training completed!")
