@@ -142,9 +142,12 @@ def check_dataset():
                 "Dataset not found. Make sure kagglehub downloaded it correctly.")
 
 
-def prepare_data():
-    """Prepare data loaders for training"""
-    import glob
+def prepare_data() -> tuple:
+    """Prepare data loaders for training.
+
+    Returns:
+        tuple: (train_loader, test_loader) DataLoader objects.
+    """
     from monai.transforms import (
         Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged,
         Orientationd, Spacingd, ToTensord, DivisiblePadd, CropForegroundd
@@ -158,8 +161,8 @@ def prepare_data():
     labels_path = DATASET_DIR / "labelsTr"
 
     # Get all image and label files
-    all_images = sorted(glob.glob(str(images_path / "*.nii")))
-    all_labels = sorted(glob.glob(str(labels_path / "*.nii")))
+    all_images = sorted([str(p) for p in images_path.glob("*.nii")])
+    all_labels = sorted([str(p) for p in labels_path.glob("*.nii")])
 
     print(f"Found {len(all_images)} images and {len(all_labels)} labels")
 
@@ -241,9 +244,12 @@ def prepare_data():
         print("Creating validation dataset (local - no caching)...")
         test_ds = Dataset(data=test_files, transform=test_transforms)
 
+    # Use multiple workers to speed up data loading
+    num_workers = 4 if KAGGLE_ENV else 2
     train_loader = DataLoader(
-        train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=0)
-    test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, num_workers=0)
+        train_ds, batch_size=BATCH_SIZE, shuffle=True, num_workers=num_workers)
+    test_loader = DataLoader(
+        test_ds, batch_size=BATCH_SIZE, num_workers=num_workers)
 
     return train_loader, test_loader
 
@@ -253,6 +259,7 @@ def train_model(train_loader, test_loader):
     from monai.networks.nets import UNet
     from monai.networks.layers import Norm
     from monai.losses import DiceLoss
+    from monai.metrics import DiceMetric
     from tqdm import tqdm
     import numpy as np
     import torch
@@ -295,14 +302,15 @@ def train_model(train_loader, test_loader):
     if use_amp:
         print("Using Automatic Mixed Precision (AMP) for faster training")
 
-    # Helper function for dice metric
-    def dice_metric(predicted, target):
-        # Convert predicted to float32 to ensure numerical stability
-        # (important when using AMP which may output float16)
-        predicted = predicted.float()
-        dice_value = DiceLoss(
-            to_onehot_y=True, sigmoid=True, squared_pred=True)
-        return 1 - dice_value(predicted, target).item()
+    # Dice metric for evaluation (more efficient than recreating DiceLoss each time)
+    dice_metric = DiceMetric(include_background=False,
+                             reduction="mean", get_not_nans=False)
+
+    # Post-processing transforms for metric computation
+    from monai.transforms import Activations, AsDiscrete, Compose as TCompose
+    post_pred = TCompose(
+        [Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    post_label = AsDiscrete(threshold=0.5)
 
     # Training loop
     best_metric = -1
@@ -392,11 +400,14 @@ def train_model(train_loader, test_loader):
                 optimizer.step()
 
             train_epoch_loss += train_loss.item()
-            train_metric = dice_metric(outputs, label)
-            epoch_metric_train += train_metric
+            # Compute dice metric with post-processing
+            outputs_post = post_pred(outputs)
+            labels_post = post_label(label)
+            dice_metric(y_pred=outputs_post, y=labels_post)
 
         train_epoch_loss /= train_step
-        epoch_metric_train /= train_step
+        epoch_metric_train = dice_metric.aggregate().item()
+        dice_metric.reset()
         save_loss_train.append(train_epoch_loss)
         save_metric_train.append(epoch_metric_train)
 
@@ -429,11 +440,14 @@ def train_model(train_loader, test_loader):
                     test_loss = loss_function(test_outputs, test_label)
                     test_epoch_loss += test_loss.item()
 
-                    test_metric = dice_metric(test_outputs, test_label)
-                    epoch_metric_test += test_metric
+                    # Compute dice metric with post-processing
+                    test_outputs_post = post_pred(test_outputs)
+                    test_labels_post = post_label(test_label)
+                    dice_metric(y_pred=test_outputs_post, y=test_labels_post)
 
                 test_epoch_loss /= test_step
-                epoch_metric_test /= test_step
+                epoch_metric_test = dice_metric.aggregate().item()
+                dice_metric.reset()
                 save_loss_test.append(test_epoch_loss)
                 save_metric_test.append(epoch_metric_test)
 
