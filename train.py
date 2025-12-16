@@ -38,10 +38,10 @@ BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 # Training configuration
 SEED = 0
 BATCH_SIZE = 1
-MAX_EPOCHS_KAGGLE = 100 # Full training on Kaggle GPU (with early stopping)
+MAX_EPOCHS_KAGGLE = 100  # Full training on Kaggle GPU (with early stopping)
 MAX_EPOCHS_LOCAL = 1        # Quick test locally
-EARLY_STOPPING_PATIENCE = 5   # Stop if validation doesn't improve for 5 epochs
-LEARNING_RATE = 1e-5
+EARLY_STOPPING_PATIENCE = 15   # Stop if validation doesn't improve for 15 epochs
+LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-5
 TEST_INTERVAL = 1
 TRAIN_RATIO = 0.8           # 80% training, 20% validation
@@ -149,7 +149,7 @@ def prepare_data() -> tuple:
         tuple: (train_loader, test_loader) DataLoader objects.
     """
     from monai.transforms import (
-        Compose, LoadImaged, EnsureChannelFirstd, ScaleIntensityRanged,
+        Compose, LoadImaged, EnsureChannelFirstd, NormalizeIntensityd,
         Orientationd, Spacingd, ToTensord, DivisiblePadd, CropForegroundd
     )
     from monai.data import CacheDataset, Dataset, DataLoader
@@ -194,8 +194,7 @@ def prepare_data() -> tuple:
         Spacingd(keys=["image", "label"], pixdim=PIXDIM,
                  mode=("bilinear", "nearest")),
         Orientationd(keys=["image", "label"], axcodes="RAS", labels=None),
-        ScaleIntensityRanged(
-            keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         CropForegroundd(keys=["image", "label"], source_key="image"),
         # Pad to ensure dimensions are divisible by 16 (UNet with 4 downsampling layers: 2^4=16)
         DivisiblePadd(keys=["image", "label"], k=16),
@@ -214,8 +213,7 @@ def prepare_data() -> tuple:
         Spacingd(keys=["image", "label"], pixdim=PIXDIM,
                  mode=("bilinear", "nearest")),
         Orientationd(keys=["image", "label"], axcodes="RAS", labels=None),
-        ScaleIntensityRanged(
-            keys=["image"], a_min=A_MIN, a_max=A_MAX, b_min=0.0, b_max=1.0, clip=True),
+        NormalizeIntensityd(keys=["image"], nonzero=True, channel_wise=True),
         CropForegroundd(keys=["image", "label"], source_key="image"),
         # Pad to ensure dimensions are divisible by 16 (UNet with 4 downsampling layers: 2^4=16)
         DivisiblePadd(keys=["image", "label"], k=16),
