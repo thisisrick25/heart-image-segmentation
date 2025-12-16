@@ -386,7 +386,7 @@ def train_model(train_loader, test_loader):
         epoch_metric_train = 0
         train_step = 0
 
-        for batch_data in tqdm(train_loader, desc="Training"):
+        for batch_data in tqdm(train_loader, desc="Training", ascii=True):
             train_step += 1
             image = batch_data["image"].to(device)
             label = batch_data["label"].to(device)
@@ -436,7 +436,7 @@ def train_model(train_loader, test_loader):
                 epoch_metric_test = 0
                 test_step = 0
 
-                for test_data in tqdm(test_loader, desc="Validation"):
+                for test_data in tqdm(test_loader, desc="Validation", ascii=True):
                     test_step += 1
                     test_image = test_data["image"].to(device)
                     test_label = test_data["label"].to(device)
