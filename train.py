@@ -185,7 +185,10 @@ def prepare_data() -> tuple:
         f"Training samples: {len(train_files)}, Validation samples: {len(test_files)}")
 
     # Import augmentation transforms
-    from monai.transforms import RandFlipd, RandRotate90d, RandShiftIntensityd
+    from monai.transforms import (
+        RandFlipd, RandRotate90d, RandShiftIntensityd,
+        RandAffined, RandGaussianNoised
+    )
 
     # Define transforms with augmentation for training
     train_transforms = Compose([
@@ -204,6 +207,15 @@ def prepare_data() -> tuple:
         RandFlipd(keys=["image", "label"], spatial_axis=[2], prob=0.5),
         RandRotate90d(keys=["image", "label"], prob=0.5, spatial_axes=(0, 1)),
         RandShiftIntensityd(keys=["image"], offsets=0.1, prob=0.5),
+        RandAffined(
+            keys=['image', 'label'],
+            prob=0.5,
+            rotate_range=(0.26, 0.26, 0.26),  # ~15 degrees in radians
+            scale_range=(0.1, 0.1, 0.1),
+            mode=("bilinear", "nearest"),
+            padding_mode="zeros"
+        ),
+        RandGaussianNoised(keys=['image'], prob=0.3, mean=0.0, std=0.1),
         ToTensord(keys=["image", "label"]),
     ])
 
@@ -281,6 +293,7 @@ def train_model(train_loader, test_loader):
         strides=(2, 2, 2, 2),
         num_res_units=2,
         norm=Norm.BATCH,
+        dropout=0.2,
     ).to(device)
 
     # Loss and optimizer
