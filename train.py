@@ -259,7 +259,6 @@ def train_model(train_loader, test_loader):
     from monai.networks.nets import UNet
     from monai.networks.layers import Norm
     from monai.losses import DiceLoss
-    from monai.metrics import DiceMetric
     from tqdm import tqdm
     import numpy as np
     import torch
@@ -302,15 +301,14 @@ def train_model(train_loader, test_loader):
     if use_amp:
         print("Using Automatic Mixed Precision (AMP) for faster training")
 
-    # Dice metric for evaluation (more efficient than recreating DiceLoss each time)
-    dice_metric = DiceMetric(include_background=False,
-                             reduction="mean", get_not_nans=False)
-
-    # Post-processing transforms for metric computation
-    from monai.transforms import Activations, AsDiscrete, Compose as TCompose
-    post_pred = TCompose(
-        [Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-    post_label = AsDiscrete(threshold=0.5)
+    # Helper function for dice metric
+    def dice_metric(predicted, target):
+        # Convert predicted to float32 to ensure numerical stability
+        # (important when using AMP which may output float16)
+        predicted = predicted.float()
+        dice_value = DiceLoss(
+            to_onehot_y=True, sigmoid=True, squared_pred=True)
+        return 1 - dice_value(predicted, target).item()
 
     # Training loop
     best_metric = -1
@@ -400,14 +398,11 @@ def train_model(train_loader, test_loader):
                 optimizer.step()
 
             train_epoch_loss += train_loss.item()
-            # Compute dice metric with post-processing
-            outputs_post = post_pred(outputs)
-            labels_post = post_label(label)
-            dice_metric(y_pred=outputs_post, y=labels_post)
+            train_metric = dice_metric(outputs, label)
+            epoch_metric_train += train_metric
 
         train_epoch_loss /= train_step
-        epoch_metric_train = dice_metric.aggregate().item()
-        dice_metric.reset()
+        epoch_metric_train /= train_step
         save_loss_train.append(train_epoch_loss)
         save_metric_train.append(epoch_metric_train)
 
@@ -440,14 +435,11 @@ def train_model(train_loader, test_loader):
                     test_loss = loss_function(test_outputs, test_label)
                     test_epoch_loss += test_loss.item()
 
-                    # Compute dice metric with post-processing
-                    test_outputs_post = post_pred(test_outputs)
-                    test_labels_post = post_label(test_label)
-                    dice_metric(y_pred=test_outputs_post, y=test_labels_post)
+                    test_metric = dice_metric(test_outputs, test_label)
+                    epoch_metric_test += test_metric
 
                 test_epoch_loss /= test_step
-                epoch_metric_test = dice_metric.aggregate().item()
-                dice_metric.reset()
+                epoch_metric_test /= test_step
                 save_loss_test.append(test_epoch_loss)
                 save_metric_test.append(epoch_metric_test)
 
