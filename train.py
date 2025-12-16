@@ -38,7 +38,7 @@ BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 # Training configuration
 SEED = 0
 BATCH_SIZE = 1
-MAX_EPOCHS_KAGGLE = 30      # Full training on Kaggle GPU (with early stopping)
+MAX_EPOCHS_KAGGLE = 100 # Full training on Kaggle GPU (with early stopping)
 MAX_EPOCHS_LOCAL = 1        # Quick test locally
 EARLY_STOPPING_PATIENCE = 5   # Stop if validation doesn't improve for 5 epochs
 LEARNING_RATE = 1e-5
